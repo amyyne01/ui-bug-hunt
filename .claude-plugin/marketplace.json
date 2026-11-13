@@ -1,0 +1,16 @@
+{
+  "name": "ui-bug-hunt",
+  "owner": {
+    "name": "amyyne01"
+  },
+  "metadata": {
+    "description": "Hunt small visual bugs on every page of any web app: measure with a browser, review only the flagged screenshots, one report grouped by component."
+  },
+  "plugins": [
+    {
+      "name": "ui-bug-hunt",
+      "source": "./",
+      "description": "Hunt small visual bugs on every page of any web app (measure + screenshot review + one report)."
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "name": "ui-bug-hunt-scripts",
+  "private": true,
+  "type": "module",
+  "description": "Scanner and report for the ui-bug-hunt skill. `npm install` here once; no browser download needed when Chrome is installed (otherwise: npx playwright install chromium).",
+  "scripts": {
+    "scan": "node scan.mjs",
+    "pick": "node pick.mjs",
+    "report": "node report.mjs"
+  },
+  "dependencies": {
+    "playwright": "^1.48.0"
+  },
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  }
+}
