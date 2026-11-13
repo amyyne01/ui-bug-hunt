@@ -8,6 +8,7 @@ desktop sizes. It writes a report. It does not change your code.
 ## How it works
 
 ```mermaid
+%%{init: {"flowchart": {"wrappingWidth": 520, "nodeSpacing": 30, "rankSpacing": 34}, "themeVariables": {"fontSize": "17px"}}}%%
 flowchart TD
   A["<b>1 · Recon</b><br/>Three small agents find the pages,<br/>the locales, the sign-in and the house rules"]
   B["<b>2 · Coverage pass</b><br/>One fast load of each page, to catch<br/>error screens and login walls first"]
