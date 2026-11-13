@@ -157,19 +157,21 @@ async function hoverPass(page) {
   return { checked: n, noFeedback, layoutShift };
 }
 
+const bare = (u) => u.split(/[?#]/)[0].slice(0, 120);   // query strings can carry tokens: never written to the results
 async function visit(browser, job) {
   const [w, h, touch] = VIEWPORTS[job.vp];
   const ctx = await browser.newContext({ viewport: { width: w, height: h }, userAgent: touch ? PHONE_UA : DESKTOP_UA, isMobile: touch, hasTouch: touch,
+    ...(READ_ONLY ? { serviceWorkers: 'block' } : {}),   // a service worker's own requests would not pass through the read-only filter
     ...(arg('--storage') ? { storageState: arg('--storage') } : {}), ...(job.locale ? { locale: job.locale } : {}) });
   if (job.locale && LOCALE_MODE.startsWith('cookie:')) await ctx.addCookies([{ name: LOCALE_MODE.slice(7), value: job.locale, url: BASE }]);
   if (arg('--init')) await ctx.addInitScript({ content: fs.readFileSync(arg('--init'), 'utf8') });
   const blocked = [];
-  if (READ_ONLY) await ctx.route(READ_ONLY, (r) => (['POST', 'PUT', 'PATCH', 'DELETE'].includes(r.request().method()) ? (blocked.push(`${r.request().method()} ${r.request().url().slice(0, 100)}`), r.abort()) : r.continue()));
+  if (READ_ONLY) await ctx.route(READ_ONLY, (r) => (['POST', 'PUT', 'PATCH', 'DELETE'].includes(r.request().method()) ? (blocked.push(`${r.request().method()} ${bare(r.request().url())}`), r.abort()) : r.continue()));
   const page = await ctx.newPage();
   const rec = { route: job.route, locale: job.locale, vp: job.vp, pageErrors: [], consoleErrors: [], failedRequests: [] };
   page.on('pageerror', (e) => rec.pageErrors.push(String(e.message || e).slice(0, 200)));
   page.on('console', (m) => { if (m.type() === 'error') rec.consoleErrors.push(m.text().slice(0, 200)); });
-  page.on('response', (r) => { if (r.status() >= 400 && ['document', 'image', 'script', 'stylesheet', 'font', 'fetch', 'xhr'].includes(r.request().resourceType())) rec.failedRequests.push(`${r.status()} ${r.url().slice(0, 120)}`); });
+  page.on('response', (r) => { if (r.status() >= 400 && ['document', 'image', 'script', 'stylesheet', 'font', 'fetch', 'xhr'].includes(r.request().resourceType())) rec.failedRequests.push(`${r.status()} ${bare(r.url())}`); });
   const pathPart = job.route === '/' ? '' : job.route;
   let url = `${BASE}${job.locale && LOCALE_MODE === 'prefix' ? '/' + job.locale : ''}${pathPart}` || BASE;
   if (job.locale && LOCALE_MODE.startsWith('query:')) url += `${url.includes('?') ? '&' : '?'}${LOCALE_MODE.slice(6)}=${encodeURIComponent(job.locale)}`;
@@ -223,16 +225,23 @@ const host = (h) => h.replace(/^www\./, '');
 const basePath = B.pathname.replace(/\/+$/, '');   // --base https://x.com/blog: routes are relative to /blog
 const sameSite = (u) => { try { const x = new URL(u, BASE); return host(x.hostname) === host(B.hostname) && x.pathname.startsWith(basePath) ? x : null; } catch { return null; } };
 const routeOf = (x) => (x.pathname.slice(basePath.length).replace(/\/+$/, '') || '/') + (x.hash.startsWith('#/') ? x.hash : '');
+// Opening a link can itself DO something in some apps (/orders/42/cancel): action-looking links are never followed
+// by the crawl, and are dropped from a sitemap when the scan is signed in.
+const SKIP = new RegExp(arg('--crawl-skip', String.raw`(log-?out|sign-?out|delete|remove|destroy|unsubscribe|cancel|approve|reject|accept|confirm|archive|restore|publish|unpublish|activate|deactivate|enable|disable|toggle|mark|read-all|reset|revoke|block|ban|refund|void|pay|charge|send|resend|ship|fulfil|clear|empty|duplicate|clone|export|download|impersonate)([-_/.?#]|$)|\.(pdf|zip|png|jpe?g|gif|svg|webp|mp4|xml|csv|json)$`), 'i');
 async function fromSitemap(url) {
   const seen = new Set(), out = new Set(), queue = [url];
   while (queue.length && seen.size < 50) {
     const u = queue.shift(); if (seen.has(u)) continue; seen.add(u);
     const xml = await fetch(u).then((r) => r.text()).catch(() => '');
     for (const [, loc] of xml.matchAll(/<loc>\s*([^<\s]+)\s*<\/loc>/g)) {
-      if (/\.xml(\?|$)/.test(loc)) queue.push(loc); else { const x = sameSite(loc); if (x) out.add(routeOf(x)); }
+      // a nested sitemap is fetched only from the site's own host (a sitemap must not point the scanner elsewhere)
+      if (/\.xml(\?|$)/.test(loc)) { try { if (host(new URL(loc).hostname) === host(B.hostname)) queue.push(loc); } catch { /* not a URL */ } } else { const x = sameSite(loc); if (x) out.add(routeOf(x)); }
     }
   }
-  return [...out];
+  if (!arg('--storage')) return [...out];
+  const kept = [...out].filter((r) => !SKIP.test(r));
+  if (kept.length < out.size) console.log(`signed in: ${out.size - kept.length} action-looking sitemap page(s) left out (--crawl-skip REGEX changes the list; --routes FILE scans exactly what you list)`);
+  return kept;
 }
 async function crawl(limit) {
   if (arg('--storage') && !flag('--crawl-signed-in')) {
@@ -240,16 +249,14 @@ async function crawl(limit) {
       + 'pages, give the signed-in pages with --routes, or (a TEST account only) add --crawl-signed-in.');
     process.exit(2);
   }
-  const ctx = await browser.newContext({ userAgent: DESKTOP_UA, ...(arg('--storage') ? { storageState: arg('--storage') } : {}) });
+  const ctx = await browser.newContext({ userAgent: DESKTOP_UA, ...(READ_ONLY ? { serviceWorkers: 'block' } : {}), ...(arg('--storage') ? { storageState: arg('--storage') } : {}) });
   if (READ_ONLY) await ctx.route(READ_ONLY, (r) => (['POST', 'PUT', 'PATCH', 'DELETE'].includes(r.request().method()) ? r.abort() : r.continue()));
   const page = await ctx.newPage();
   const found = ['/'], seen = new Set(['/']);
-  // Opening a link can itself DO something in some apps (/orders/42/cancel): action-looking links are never followed.
-  const skip = new RegExp(arg('--crawl-skip', String.raw`(log-?out|sign-?out|delete|remove|destroy|unsubscribe|cancel|approve|reject|accept|confirm|archive|restore|publish|unpublish|activate|deactivate|enable|disable|toggle|mark|read-all|reset|revoke|block|ban|refund|void|pay|charge|send|resend|ship|fulfil|clear|empty|duplicate|clone|export|download|impersonate)([-_/.?#]|$)|\.(pdf|zip|png|jpe?g|gif|svg|webp|mp4|xml|csv|json)$`), 'i');
   for (let k = 0; k < found.length && found.length < limit; k++) {
     try { await page.goto(BASE + (found[k] === '/' ? '' : found[k]), { waitUntil: 'domcontentloaded', timeout: 45000 }); await page.waitForTimeout(2500); } catch { continue; }
     const hrefs = await page.evaluate(() => [...document.querySelectorAll('a[href]')].map((a) => a.href)).catch(() => []);
-    for (const h of hrefs) { const x = sameSite(h); if (!x) continue; const r = routeOf(x); if (!seen.has(r) && !skip.test(r)) { seen.add(r); found.push(r); } if (found.length >= limit) break; }
+    for (const h of hrefs) { const x = sameSite(h); if (!x) continue; const r = routeOf(x); if (!seen.has(r) && !SKIP.test(r)) { seen.add(r); found.push(r); } if (found.length >= limit) break; }
   }
   await ctx.close();
   return found;
