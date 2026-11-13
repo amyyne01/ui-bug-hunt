@@ -7,18 +7,7 @@ desktop sizes. It writes a report. It does not change your code.
 
 ## How it works
 
-```mermaid
-%%{init: {"flowchart": {"wrappingWidth": 520, "nodeSpacing": 30, "rankSpacing": 34}, "themeVariables": {"fontSize": "17px"}}}%%
-flowchart TD
-  A["<b>1 · Recon</b><br/>Three small agents find the pages,<br/>the locales, the sign-in and the house rules"]
-  B["<b>2 · Coverage pass</b><br/>One fast load of each page, to catch<br/>error screens and login walls first"]
-  C["<b>3 · Calibrate on 2 pages</b><br/>Checked by hand, so things that are<br/>there by design are not reported"]
-  D["<b>4 · Scan every page</b><br/>A headless browser measures each page<br/>and takes screenshots at every size"]
-  E["<b>5 · Pick the screenshots that matter</b><br/>Only the ones the measurements point to,<br/>plus a small sample of clean pages"]
-  F["<b>6 · Agents review them</b><br/>They look for what numbers cannot see"]
-  G["<b>7 · One report</b><br/>Findings grouped by component,<br/>ranked high / medium / low"]
-  A --> B --> C --> D --> E --> F --> G
-```
+<p align="center"><img src="assets/how-it-works.svg" width="830" alt="1. Recon, 2. Coverage pass, 3. Calibrate on 2 pages, 4. Scan every page, 5. Pick the screenshots that matter, 6. Agents review them, 7. One report grouped by component"></p>
 
 ## What it catches
 
