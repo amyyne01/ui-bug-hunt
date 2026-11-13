@@ -114,6 +114,9 @@ check(pick.status === 0 && batch.includes('overflow_xx_d.png') && batch.includes
 check(!batch.includes('boom_') && !batch.includes('account_') && picked.notReviewable?.length === 2, 'pick leaves out the error screen and the login wall');
 check(!batch.includes('contrast_xx_d.png') && !batch.includes('overflow_xx_d_resized390.png') && picked.images < shots.length / 2, `pick opens a fraction of the shots (${picked.images} of ${shots.length})`);
 
+const all = await run('pick.mjs', ['--shots', path.join(scanDir, 'shots'), '--all-sizes', '--out', path.join(OUT, 'review-all'), scanDir]);
+check(all.status === 0 && fs.readFileSync(path.join(OUT, 'review-all', 'batch-1.md'), 'utf8').includes('overflow_xx_d_resized390.png'), 'pick --all-sizes opens every flagged size');
+
 // 5. report
 const md = path.join(OUT, 'report.md');
 const rep = await run('report.mjs', [md, scanDir]);

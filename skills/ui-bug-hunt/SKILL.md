@@ -54,8 +54,9 @@ none it falls back to Playwright's Chromium (`npx playwright install chromium`; 
 The browser pass is cheap; reading images is not (about 100-180k tokens per reviewer that opens 60-95 shots).
 `pick.mjs` opens a size only where the probe flagged it (320 and the resized widths only when they show
 something the phone and desktop shots do not), plus 1 in `--sample` clean pages (default 5) and the
-`--key` pages: about 1.2 images per route instead of 3-4. Raise `--sample` for a quick sweep, set it to 1 for a
-release-blocking audit. Right-to-left order bugs are mostly seen by eye, so RTL phone shots are sampled densely
+`--key` pages: about 1.2 images per route instead of 3-4. Raise `--sample` for a quick sweep; for a
+release-blocking audit set it to 1 and add `--all-sizes` (every flagged size is opened: the same element can
+break differently at 320). Right-to-left order bugs are mostly seen by eye, so RTL phone shots are sampled densely
 (`--rtl-sample`, default every 2nd page; 1 = all, for an RTL-first app). Contrast ratios, tap sizes and hover
 feedback never trigger a read: the numbers report them fully.
 

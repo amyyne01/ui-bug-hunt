@@ -14,6 +14,7 @@
  *   RTL phone (_<rtl>_m)    if the RTL phone was flagged, or every --rtl-sample-th route (default 2; 1 = all)
  *   320 (_x)                if the 320 view was flagged with something the files above do not already show
  *   _d_resized768 / 390     if the live resize flagged that width, same rule
+ *   --all-sizes             open every flagged size anyway (the same element can break differently at 320)
  * Contrast ratios, tap-target sizes and "no hover feedback" never trigger a read: the numbers report them fully.
  * Writes <out>/batch-<n>.md (file list + what the probe saw on each file) and <out>/picked.json.
  */
@@ -27,8 +28,9 @@ const SAMPLE = +arg('--sample', 5), PER = +arg('--per-batch', 40);
 // Right-to-left order bugs (scrambled dates, a time's marker wrapping alone) are mostly seen by eye: RTL phone
 // shots are sampled more densely. --rtl-sample 1 = every RTL page (an RTL-first app).
 const RTL_SAMPLE = +arg('--rtl-sample', 2);
+const ALL_SIZES = argv.includes('--all-sizes');   // a release audit: open every flagged size, even for the same element
 const KEY = new Set((arg('--key', '') || '').split(',').filter(Boolean));
-const inputs = argv.filter((a, i) => !a.startsWith('--') && !argv[i - 1]?.startsWith('--'));
+const inputs = argv.filter((a, i) => !a.startsWith('--') && (!argv[i - 1]?.startsWith('--') || argv[i - 1] === '--all-sizes'));
 if (!SHOTS || !inputs.length) { console.error('usage: node pick.mjs --shots <dir> [--main <locale>] [--rtl <locale>] --out <dir> <scan folder or scan.json ...>'); process.exit(2); }
 
 // Scan results: files, or folders whose *.json are read; anything that is not an array of scan rows
@@ -73,7 +75,7 @@ for (const [route, rs] of [...byRoute.entries()].sort()) {
   const key = (h) => h.replace(/\d+/g, '#');
   const add = (file, why, onlyNew) => {
     const hs = why.split(' | ');
-    if (onlyNew && (!why || hs.every((h) => shown.has(key(h))))) return;
+    if (onlyNew && !ALL_SIZES && (!why || hs.every((h) => shown.has(key(h))))) return;
     if (fs.existsSync(path.join(SHOTS, file))) { pick.push({ route, file, why }); hs.forEach((h) => shown.add(key(h))); }
   };
   if (m && (anyFlag || (clean - 1) % SAMPLE === 0)) add(slug(route, MAIN, 'm'), anyFlag ? hints(m.visual).join(' | ') || 'flagged elsewhere: check phone too' : 'clean sample');
