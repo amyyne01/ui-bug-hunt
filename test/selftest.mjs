@@ -42,7 +42,8 @@ const PAGES = {
 let posts = 0;
 const server = http.createServer((req, res) => {
   if (req.method === 'POST') { posts++; return res.end('ok'); }
-  if (req.url === '/sitemap.xml') return res.end(`<urlset>${[...Object.keys(PAGES).filter((r) => !r.includes('?')), '/account', '/boom'].map((r) => `<url><loc>http://${req.headers.host}${r}</loc></url>`).join('')}</urlset>`);
+  if (req.url === '/sitemap.xml') return res.end(`<urlset>${[...Object.keys(PAGES).filter((r) => !r.includes('?')), '/account', '/boom', '/orders/1/cancel'].map((r) => `<url><loc>http://${req.headers.host}${r}</loc></url>`).join('')}</urlset>`);
+  if (req.url === '/orders/1/cancel') return res.end(page('<p>Order cancelled.</p>'));   // a link that acts when opened
   if (req.url === '/account') { res.writeHead(302, { location: '/login' }); return res.end(); }
   if (req.url === '/boom') { res.writeHead(500, { 'content-type': 'text/html' }); return res.end(page('<p>Internal Server Error</p>')); }
   const hit = PAGES[req.url] || (req.url === '/login' ? [page('<p>Sign in</p>')] : null);
@@ -103,7 +104,12 @@ check(/0 page loads to do/.test((await run('scan.mjs', ['--base', BASE, '--route
 
 // 3b. pages from a sitemap, thinned by --max-routes
 const sm = await run('scan.mjs', ['--base', BASE, '--sitemap', `${BASE}/sitemap.xml`, '--max-routes', '1', '--matrix', '-:m', '--wait', '200', '--out', path.join(OUT, 'sitemap'), ...extra]);
-check(/18 routes, keeping 1 /.test(sm.stdout) && /all page loads done/.test(sm.stdout), 'pages read from a sitemap');
+check(/19 routes, keeping 1 /.test(sm.stdout) && /all page loads done/.test(sm.stdout), 'pages read from a sitemap');
+const state = path.join(OUT, 'state.json');
+fs.writeFileSync(state, '{"cookies":[],"origins":[]}');
+const signed = await run('scan.mjs', ['--base', BASE, '--sitemap', `${BASE}/sitemap.xml`, '--storage', state, '--max-routes', '1', '--matrix', '-:m', '--wait', '200', '--out', path.join(OUT, 'signed'), ...extra]);
+check(/1 action-looking sitemap page/.test(signed.stdout) && /18 routes, keeping 1 /.test(signed.stdout), 'signed in: the action-looking sitemap page is left out');
+check((await run('scan.mjs', ['--base', BASE, '--crawl', '5', '--storage', state, '--out', path.join(OUT, 'crawl'), ...extra])).status === 2, 'signed in: crawling is refused');
 
 // 4. pick: flagged pages are opened, error pages are not
 const review = path.join(OUT, 'review');
