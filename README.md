@@ -1,5 +1,6 @@
 # ui-bug-hunt
 
+[![test](https://github.com/amyyne01/ui-bug-hunt/actions/workflows/test.yml/badge.svg)](https://github.com/amyyne01/ui-bug-hunt/actions/workflows/test.yml)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 A Claude Code skill that finds small visual bugs on every page of any website or web app, at phone, tablet and
