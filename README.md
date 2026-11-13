@@ -8,18 +8,16 @@ desktop sizes. It writes a report. It does not change your code.
 ## How it works
 
 ```mermaid
-flowchart LR
-  A["Recon"] --> B["Coverage pass"] --> C["Calibrate on 2 pages"] --> D["Scan every page"]
-  D --> E["Pick screenshots"] --> F["Agents review"] --> G["One report"]
+flowchart TD
+  A["<b>1 · Recon</b><br/>Three small agents find the pages,<br/>the locales, the sign-in and the house rules"]
+  B["<b>2 · Coverage pass</b><br/>One fast load of each page, to catch<br/>error screens and login walls first"]
+  C["<b>3 · Calibrate on 2 pages</b><br/>Checked by hand, so things that are<br/>there by design are not reported"]
+  D["<b>4 · Scan every page</b><br/>A headless browser measures each page<br/>and takes screenshots at every size"]
+  E["<b>5 · Pick the screenshots that matter</b><br/>Only the ones the measurements point to,<br/>plus a small sample of clean pages"]
+  F["<b>6 · Agents review them</b><br/>They look for what numbers cannot see"]
+  G["<b>7 · One report</b><br/>Findings grouped by component,<br/>ranked high / medium / low"]
+  A --> B --> C --> D --> E --> F --> G
 ```
-
-- **Recon**: three small agents find the pages, the locales, the sign-in and the house rules.
-- **Coverage pass**: one fast load of each page, to catch error screens and login walls first.
-- **Calibrate**: two pages are checked by hand so things that are there by design are not reported.
-- **Scan**: a headless browser measures every page and takes screenshots.
-- **Pick**: only the screenshots the measurements point to are kept, plus a small sample of clean pages.
-- **Review**: agents look at those screenshots for what numbers cannot see.
-- **Report**: one file, findings grouped by component.
 
 ## What it catches
 
