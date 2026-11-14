@@ -25,6 +25,7 @@ desktop sizes. It writes a report. It does not change your code.
 | One icon of a set at another size, controls of different heights in a row | |
 | Same component with another colour or font, two almost-equal text colours | |
 | A checkbox or switch cut off when clicked, animation included (`--toggle`) | |
+| With Tab: no focus indicator, a focus ring cut off, focus on something invisible (`--focus`) | |
 | Layouts that break on live resize to 768 / 390 / 320 | |
 | Error screens, login walls, raw i18n keys, failed requests | |
 

@@ -20,6 +20,8 @@
  * --vps d,m,x           d 1366x900, l 1024x768, t 768x1024, m 390x844, x 320x700. Default d,m,x
  * --hover               desktop: hover up to --hover-max (25) controls: no feedback / neighbours move
  * --resize              desktop: shrink the SAME loaded page to 768, 390, 320 (no reload), probe + shot each
+ * --focus               desktop: press Tab up to --focus-max (25) times (keys only): a control with no visible focus
+ *                       indicator, a focus ring cut off by its container, focus landing on something invisible
  * --toggle              the ONE pass that clicks: each checkbox and switch (up to --toggle-max, 10) is clicked, watched
  *                       frame by frame for anything cut off by its container (the tick, a ripple, a focus ring), then
  *                       clicked again to put it back. Radios are never clicked. Refused with --storage unless
@@ -37,7 +39,7 @@
  * --matrix SPEC         per-locale viewports, e.g. "en:d,m,x;ar:m" (use "-" for no locale); default --locales x --vps
  * --max-routes N       keep N routes spread evenly (a sitemap of 3000 posts); --refresh-routes re-reads a sitemap/crawl
  * --locale-segment S    (with --discover) the folder name of a locale segment besides [locale] / [lang]
- * --no-hover --no-resize --no-shots --no-toggle   turn off what a --config turned on (e.g. the coverage pass)
+ * --no-hover --no-resize --no-shots --no-focus --no-toggle   turn off what a --config turned on (e.g. the coverage pass)
  * --budget SECONDS      stop starting new pages after this long (a chunk); the same command resumes later
  * --tag NAME            output file name part (default "scan"); resumes: routes already in the JSON are skipped
  * --pw-from DIR         a repo whose node_modules has playwright
@@ -56,8 +58,8 @@ if (!argv.length || argv.includes('--help') || argv.includes('-h')) {   // the f
   process.exit(0);
 }
 // A mistyped flag must stop the run, not be ignored: "--read_only" would scan production with no write protection.
-const VALUE_FLAGS = '--base --routes --sitemap --crawl --crawl-skip --discover --ids --locales --locale-mode --vps --hover-max --toggle-max --read-only --storage --init --wait --error-text --channel --workers --matrix --max-routes --locale-segment --budget --tag --pw-from --config --out'.split(' ');
-const BOOL_FLAGS = '--hover --resize --shots --no-hover --no-resize --no-shots --toggle --no-toggle --toggle-signed-in --crawl-signed-in --refresh-routes'.split(' ');
+const VALUE_FLAGS = '--base --routes --sitemap --crawl --crawl-skip --discover --ids --locales --locale-mode --vps --hover-max --toggle-max --focus-max --read-only --storage --init --wait --error-text --channel --workers --matrix --max-routes --locale-segment --budget --tag --pw-from --config --out'.split(' ');
+const BOOL_FLAGS = '--hover --resize --shots --no-hover --no-resize --no-shots --focus --no-focus --toggle --no-toggle --toggle-signed-in --crawl-signed-in --refresh-routes'.split(' ');
 const unknown = (name, where) => { console.error(`unknown ${where} "${name}" (node scan.mjs --help lists every flag)`); process.exit(2); };
 for (let i = 0; i < argv.length; i++) { if (VALUE_FLAGS.includes(argv[i])) i++; else if (!BOOL_FLAGS.includes(argv[i])) unknown(argv[i], 'flag'); }
 // --config FILE: the recon's scan-config.json ({"base": ..., "locales": "fr,ar", "hover": true, ...}); flags on the
@@ -168,6 +170,88 @@ async function hoverPass(page) {
   return { checked: n, noFeedback, layoutShift };
 }
 
+// Shared by the click and focus passes (runs in the page): grow(rect, style) = the rect plus its outline and
+// hard-edged shadows; cut(rect, from, base) = how far rect sticks out past an ancestor that clips, and which one.
+const CUT_LIB = `
+  const px = (s) => parseFloat(s) || 0;
+  const name = (el) => el.tagName.toLowerCase() + (el.id ? '#' + el.id : '') + (typeof el.className === 'string' && el.className.trim() ? '.' + el.className.trim().split(/\\s+/).slice(0, 2).join('.') : '');
+  const grow = (r, cs) => {
+    let g = cs.outlineStyle !== 'none' ? Math.max(0, Math.max(px(cs.outlineWidth), cs.outlineStyle === 'auto' ? 2 : 0) + px(cs.outlineOffset)) : 0;   // a negative offset draws the ring inside
+    for (const m of cs.boxShadow.matchAll(/rgba?\\([^)]*\\)\\s+(-?[\\d.]+)px\\s+(-?[\\d.]+)px\\s+([\\d.]+)px\\s+(-?[\\d.]+)px(\\s+inset)?/g))
+      if (!m[5] && +m[3] === 0) g = Math.max(g, +m[4] + Math.max(Math.abs(+m[1]), Math.abs(+m[2])));
+    return { left: r.left - g, top: r.top - g, right: r.right + g, bottom: r.bottom + g };
+  };
+  const over = (r, c) => Math.max(c.left - r.left, r.right - c.right, c.top - r.top, r.bottom - c.bottom, 0);
+  const cut = (r, from, base) => {
+    let worst = Math.max(-r.left, r.right - document.documentElement.clientWidth, 0), by = null;
+    for (let p = from; p && p !== document.documentElement; p = p.parentElement) {
+      const cs = getComputedStyle(p);
+      if (cs.overflowX === 'visible' && cs.overflowY === 'visible') continue;
+      const b = p.getBoundingClientRect();
+      const c = { left: b.left + p.clientLeft, top: b.top + p.clientTop, right: b.left + p.clientLeft + p.clientWidth, bottom: b.top + p.clientTop + p.clientHeight };
+      if (/auto|scroll/.test(cs.overflowX + cs.overflowY) && over(base, c) > 0.5) continue;   // scrolled partly out of a scrolling box: not a crop
+      const o = over(r, c);
+      if (o > worst) { worst = o; by = p; }
+    }
+    return [worst, by];
+  };`;
+// --focus: Tab through the page (keys only, nothing is clicked). After each Tab the page reports on the element
+// that HAD focus one step earlier, now that it can be compared with its own unfocused look.
+const FOCUS_MAX = +arg('--focus-max', 25);
+const FOCUS_STEP = `(() => {
+  ${CUT_LIB}
+  const label = (el) => name(el) + ' "' + (el.getAttribute('aria-label') || el.textContent || el.getAttribute('placeholder') || '').trim().replace(/\\s+/g, ' ').slice(0, 30) + '"';
+  // everything a focus style can change, on the element, its ::before/::after and two wrappers (focus-within)
+  const look = (el) => { const parts = []; let p = el;
+    for (let k = 0; p && k < 3; k++, p = p.parentElement) { const c = getComputedStyle(p); parts.push(c.outlineStyle, c.outlineWidth, c.outlineColor, c.boxShadow, c.borderTopColor, c.borderBottomColor, c.borderBottomWidth, c.backgroundColor, c.backgroundImage); }
+    const c = getComputedStyle(el); parts.push(c.color, c.textDecorationLine, c.opacity, c.transform, c.filter);
+    for (const w of ['::before', '::after']) { const q = getComputedStyle(el, w); parts.push(q.content, q.opacity, q.backgroundColor, q.boxShadow, q.outlineStyle, q.borderTopColor, q.transform); }
+    return parts.join('|'); };
+  const res = {};
+  const prev = window.__uibhFocus;
+  const looks = (els) => els.filter((x) => x && x.isConnected).map(look).join('#');
+  if (prev && looks(prev.els) === prev.look) res.none = prev.label;   // same look focused and not
+  let el = document.activeElement;
+  while (el && el.shadowRoot && el.shadowRoot.activeElement) el = el.shadowRoot.activeElement;   // web components: the real control is inside
+  window.__uibhFocus = null;
+  if (!el || el === document.body || el === document.documentElement || el.tagName === 'IFRAME') return res;
+  res.key = label(el);
+  // a visually hidden input (custom checkbox, radio, switch, select) shows its focus on the box drawn next to it / its label
+  const er = el.getBoundingClientRect(), stand = ['INPUT', 'SELECT', 'TEXTAREA'].includes(el.tagName) && (+getComputedStyle(el).opacity < 0.1 || er.width <= 2 || er.height <= 2);
+  const lab = stand ? el.closest('label') || (el.id && document.querySelector('label[for="' + CSS.escape(el.id) + '"]')) : null;
+  const els = stand ? [el.nextElementSibling, el.previousElementSibling, lab].filter(Boolean) : [el];
+  const v = els[0] || el;
+  const r = v.getBoundingClientRect(), cs = getComputedStyle(v);
+  const shown = (v.checkVisibility?.({ checkOpacity: true, checkVisibilityCSS: true }) ?? true) && r.width > 1 && r.height > 1 && r.right > 0 && r.left < innerWidth && r.bottom > 0 && r.top < innerHeight;
+  if (!shown) { res.hidden = res.key; return res; }
+  const [o, by] = cut(grow(r, cs), v.parentElement, r);
+  // only a ring cut around a control that is itself whole: one already half out of its box (a carousel, the screen edge) is not a ring bug
+  const whole = by && cut(r, v.parentElement, r)[0] <= 0.5;   // by null = the screen edge: a full-width control always touches it
+  if (o >= 1.5 && whole) res.crop = res.key + ' ring cut ' + Math.round(o) + 'px by ' + (by ? name(by) : 'the screen edge');
+  window.__uibhFocus = { els, label: res.key, look: looks(els) };
+  return res;
+})()`;
+async function focusPass(page) {
+  const out = { checked: 0, noIndicator: [], cropped: [], hidden: [] };
+  const seen = new Set();
+  await page.evaluate('window.scrollTo(0, 0); document.activeElement?.blur?.(); window.__uibhFocus = null;');
+  for (let i = 0; i <= FOCUS_MAX; i++) {
+    if (i < FOCUS_MAX) await page.keyboard.press('Tab'); else await page.evaluate('document.activeElement?.blur?.()');   // last step: only judge the previous one
+    await page.waitForTimeout(120);
+    const s = await page.evaluate(FOCUS_STEP).catch(() => null);
+    if (!s) break;
+    if (s.none) out.noIndicator.push(s.none);
+    if (s.hidden) out.hidden.push(s.hidden);
+    if (s.crop) out.cropped.push(s.crop);
+    if (!s.key) { if (i > 0) break; continue; }   // focus left the page
+    if (seen.has(s.key) && i < FOCUS_MAX) { await page.evaluate('document.activeElement?.blur?.()'); const last = await page.evaluate(FOCUS_STEP).catch(() => null); if (last?.none) out.noIndicator.push(last.none); break; }   // went round
+    seen.add(s.key); out.checked++;
+  }
+  await page.evaluate('document.activeElement?.blur?.(); window.scrollTo(0, 0);').catch(() => {});
+  for (const k of ['noIndicator', 'cropped', 'hidden']) out[k] = [...new Set(out[k])].slice(0, 12);
+  return out;
+}
+
 // --toggle: the checkboxes and switches of the page, each marked on the part the user sees and clicks (the input
 // itself, or for a hidden input the small box drawn next to it, else its label).
 const TOGGLE_MARK = `(max, skipSrc) => {
@@ -198,14 +282,7 @@ const TOGGLE_MARK = `(max, skipSrc) => {
 const TOGGLE_WATCH = `(i, ms) => new Promise((done) => {
   const v = document.querySelector('[data-uibh-t="' + i + '"]');
   if (!v) return done(null);
-  const px = (s) => parseFloat(s) || 0;
-  const name = (el) => el.tagName.toLowerCase() + (el.id ? '#' + el.id : '') + (typeof el.className === 'string' && el.className.trim() ? '.' + el.className.trim().split(/\\s+/).slice(0, 2).join('.') : '');
-  const grow = (r, cs) => {
-    let g = cs.outlineStyle !== 'none' ? px(cs.outlineWidth) + Math.max(0, px(cs.outlineOffset)) : 0;
-    for (const m of cs.boxShadow.matchAll(/rgba?\\([^)]*\\)\\s+(-?[\\d.]+)px\\s+(-?[\\d.]+)px\\s+([\\d.]+)px\\s+(-?[\\d.]+)px(\\s+inset)?/g))
-      if (!m[5] && +m[3] === 0) g = Math.max(g, +m[4] + Math.max(Math.abs(+m[1]), Math.abs(+m[2])));
-    return { left: r.left - g, top: r.top - g, right: r.right + g, bottom: r.bottom + g };
-  };
+  ${CUT_LIB}
   const pseudo = (el, which) => {
     const cs = getComputedStyle(el, which);
     if (cs.content === 'none' || cs.content === 'normal' || cs.display === 'none' || cs.position !== 'absolute' || getComputedStyle(el).position === 'static') return null;
@@ -216,20 +293,6 @@ const TOGGLE_WATCH = `(i, ms) => new Promise((done) => {
     const m = cs.transform.match(/matrix\\(([^)]+)\\)/);
     if (m) { const t = m[1].split(',').map(Number); w *= Math.hypot(t[0], t[1]); h *= Math.hypot(t[2], t[3]); cx += t[4]; cy += t[5]; }
     return grow({ left: cx - w / 2, top: cy - h / 2, right: cx + w / 2, bottom: cy + h / 2 }, cs);
-  };
-  const over = (r, c) => Math.max(c.left - r.left, r.right - c.right, c.top - r.top, r.bottom - c.bottom, 0);
-  const cut = (r, from, base) => {
-    let worst = Math.max(-r.left, r.right - document.documentElement.clientWidth, 0), by = null;
-    for (let p = from; p && p !== document.documentElement; p = p.parentElement) {
-      const cs = getComputedStyle(p);
-      if (cs.overflowX === 'visible' && cs.overflowY === 'visible') continue;
-      const b = p.getBoundingClientRect();
-      const c = { left: b.left + p.clientLeft, top: b.top + p.clientTop, right: b.left + p.clientLeft + p.clientWidth, bottom: b.top + p.clientTop + p.clientHeight };
-      if (/auto|scroll/.test(cs.overflowX + cs.overflowY) && over(base, c) > 0.5) continue;   // scrolled partly out of a scrolling box: not a crop
-      const o = over(r, c);
-      if (o > worst) { worst = o; by = p; }
-    }
-    return [worst, by];
   };
   const measure = () => {
     const base = v.getBoundingClientRect();
@@ -333,6 +396,7 @@ async function visit(browser, job) {
       await page.setViewportSize({ width: w, height: h }); await page.waitForTimeout(700);   // back: the vp's own shot is at its size
     }
     if (flag('--shots')) await page.screenshot({ path: path.join(OUT, 'shots', slug(job)) });
+    if (!touch && flag('--focus') && !rec.errorScreen && !rec.loginWall) rec.focus = await focusPass(page);
     if (flag('--toggle') && !rec.errorScreen && !rec.loginWall) rec.toggle = await togglePass(page);   // last: it clicks
   } catch (e) { rec.fatal = String(e).slice(0, 200); }
   rec.blockedWrites = blocked;
@@ -435,7 +499,7 @@ await Promise.all(Array.from({ length: Math.max(1, WORKERS) }, async () => {
     fs.writeFileSync(outJson, JSON.stringify(rows, null, 1));
     done++;
     const v = rec.visual || {};
-    console.log(`${String(done).padStart(4)}/${jobs.length} ${job.route} [${job.locale || '-'}/${job.vp}] ${rec.fatal ? 'FATAL ' + rec.fatal.slice(0, 60) : ''}${rec.errorScreen ? 'ERROR-SCREEN ' : ''}visual=${v.count ?? '-'}${rec.hover ? ` hover:none=${rec.hover.noFeedback.length} shift=${rec.hover.layoutShift.length}` : ''}${rec.toggle ? ` toggle:cut=${rec.toggle.cropped.length}/${rec.toggle.checked}` : ''}`);
+    console.log(`${String(done).padStart(4)}/${jobs.length} ${job.route} [${job.locale || '-'}/${job.vp}] ${rec.fatal ? 'FATAL ' + rec.fatal.slice(0, 60) : ''}${rec.errorScreen ? 'ERROR-SCREEN ' : ''}visual=${v.count ?? '-'}${rec.hover ? ` hover:none=${rec.hover.noFeedback.length} shift=${rec.hover.layoutShift.length}` : ''}${rec.focus ? ` focus:none=${rec.focus.noIndicator.length} cut=${rec.focus.cropped.length} hidden=${rec.focus.hidden.length}` : ''}${rec.toggle ? ` toggle:cut=${rec.toggle.cropped.length}/${rec.toggle.checked}` : ''}`);
   }
 }));
 await browser.close();

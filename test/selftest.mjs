@@ -51,7 +51,7 @@ const PAGES = {
 .tags{display:flex;flex-wrap:wrap;gap:8px;max-width:420px}.tag{padding:4px 10px;background:#eee;border-radius:12px;font-size:14px}
 .frm{display:flex;gap:8px;max-width:420px;margin:16px 0}.in{flex:1;min-width:0;height:44px;box-sizing:border-box;padding:0 12px;border:1px solid #777;font-size:16px}.go{height:44px;padding:0 16px;border:0;background:#1a4fd6;color:#fff;font-size:16px}.go:hover{background:#0b2f8a}
 .row,.ck2{display:flex;align-items:center;gap:10px;min-height:44px;padding:0 16px;position:relative}.sr2{position:absolute;opacity:0;width:20px;height:20px;margin:0}
-.box2{position:relative;display:block;width:20px;height:20px;box-sizing:border-box;border:2px solid #333}.sr2:checked+.box2{background:#1a4fd6}
+.box2{position:relative;display:block;width:20px;height:20px;box-sizing:border-box;border:2px solid #333}.sr2:checked+.box2{background:#1a4fd6}.sr2:focus-visible+.box2{outline:2px solid #1a4fd6;outline-offset:2px}
 .box2::after{content:"";position:absolute;left:-8px;top:-8px;width:32px;height:32px;border-radius:50%;background:rgba(26,79,214,.2);transform:scale(0);transition:transform .15s}.sr2:checked+.box2::after{transform:scale(1)}`), null],
   // a custom checkbox whose ripple (::after) is cut by its wrapper once checked, and one cut only while it animates
   '/checkbox-crop': [page(`<div class="clip"><label class="ck"><input class="sr" type="checkbox" aria-label="Remember me"><span class="box"></span></label></div>
@@ -59,6 +59,9 @@ const PAGES = {
   `.clip{overflow:hidden;width:24px;height:24px}.ck{display:block;position:relative;width:24px;height:24px}.sr{position:absolute;opacity:0;width:24px;height:24px;margin:0}
 .box{display:block;position:relative;width:20px;height:20px;border:2px solid #333}.box::after{content:"";position:absolute;left:-12px;top:-12px;width:44px;height:44px;border-radius:50%;background:rgba(26,79,214,.25);transform:scale(0);transition:transform .2s}.sr:checked+.box::after{transform:scale(1)}
 .clip2{overflow:hidden;width:22px;height:22px;margin-top:24px}.pop{appearance:none;display:block;box-sizing:border-box;width:22px;height:22px;margin:0;border:2px solid #333}.pop:checked{background:#1a4fd6;animation:pop .3s}@keyframes pop{50%{transform:scale(1.5)}}`), 'toggle'],
+  // keyboard focus: a link with no indicator, a ring cut by its wrapper, a link in an off-screen menu
+  '/focus': [page('<a class="btn" href="/">Normal</a> <a class="plain" href="/">Plain</a><div class="wrap"><a class="ring" href="/">Ring</a></div><div class="menu"><a href="/">Hidden menu link</a></div>',
+    '.plain{display:inline-block;min-height:44px;line-height:44px;color:#111;outline:none}.wrap{overflow:hidden;width:120px;margin-top:16px}.ring{display:block;min-height:44px;line-height:44px;color:#111}.ring:focus-visible{outline:3px solid #1a4fd6;outline-offset:2px}.menu{position:absolute;left:-400px;top:0}'), 'focus'],
   '/misaligned': [page(`<div class="r"><a class="it" href="/">One</a><a class="it" href="/">Two</a><a class="it" href="/" style="position:relative;top:5px">Three</a><a class="it" href="/">Four</a></div>
 <a class="lk" href="/">${icon(16, 'style="position:relative;top:-8px"')}<span>Settings</span></a>`,
   '.r{display:flex;gap:8px}.it{display:block;width:90px;height:44px;line-height:44px;text-align:center;background:#eee;color:#111;text-decoration:none}.it:hover{background:#ddd}.lk{display:inline-flex;align-items:center;gap:8px;min-height:44px;margin-top:20px;color:#111}'), 'misaligned'],
@@ -103,7 +106,7 @@ const extra = process.argv.slice(2);   // e.g. --channel chromium
 check((await run('scan.mjs', ['--base', BASE, '--routes', routes, '--read_only', 'x'])).status === 2, 'a mistyped flag is refused');
 
 // 2. the scan
-const scan = await run('scan.mjs', ['--base', BASE, '--routes', routes, '--matrix', '-:d,m', '--hover', '--resize', '--shots', '--toggle',
+const scan = await run('scan.mjs', ['--base', BASE, '--routes', routes, '--matrix', '-:d,m', '--hover', '--resize', '--shots', '--focus', '--toggle',
   '--read-only', '/api/', '--wait', '400', '--workers', '1', '--out', scanDir, ...extra]);
 process.stdout.write(scan.stdout.split(/\r?\n/).slice(-4).join('\n') + scan.stderr);
 check(scan.status === 0 && /all page loads done/.test(scan.stdout), 'scan ran to the end');
@@ -115,6 +118,11 @@ for (const [route, [, kind]] of Object.entries(PAGES)) {
     check(d.visual?.count === 0 && m.visual?.count === 0 && !d.errorScreen && !d.hover?.layoutShift.length
       && Object.values(d.resize || {}).every((v) => v.count === 0), `${route} is clean at every size`);
     if (route === '/app') check(d.toggle?.checked === 2 && !d.toggle.cropped.length && !d.toggle.notRestored.length && m.toggle?.checked === 2 && !m.toggle.cropped.length, '/app: both checkboxes clicked, none cut, both put back');
+    if (route === '/app') check(d.focus?.checked >= 8 && !d.focus.noIndicator.length && !d.focus.cropped.length && !d.focus.hidden.length, `/app: ${d.focus?.checked} controls reached with Tab, every focus ring visible and whole`);
+  } else if (kind === 'focus') {
+    check(d.focus?.noIndicator.some((s) => s.includes('Plain')) && !d.focus.noIndicator.some((s) => s.includes('Normal') || s.includes('Ring')), '/focus: a link with no focus indicator (and only that one)');
+    check(d.focus?.cropped.some((s) => s.includes('Ring') && s.includes('cut 5px')), '/focus: a focus ring cut by its wrapper');
+    check(d.focus?.hidden.some((s) => s.includes('Hidden menu link')), '/focus: focus lands on an off-screen link');
   } else if (kind === 'toggle') {
     check(d.toggle?.cropped.some((s) => s.includes('Remember me') && s.includes('once checked')), '/checkbox-crop: a ripple cut by its wrapper once checked');
     check(d.toggle?.cropped.some((s) => s.includes('Pop') && s.includes('during the click animation')), '/checkbox-crop: a box cut only while it animates');
@@ -166,7 +174,7 @@ check(all.status === 0 && fs.readFileSync(path.join(OUT, 'review-all', 'batch-1.
 const md = path.join(OUT, 'report.md');
 const rep = await run('report.mjs', [md, scanDir]);
 const text = fs.existsSync(md) ? fs.readFileSync(md, 'utf8') : '';
-check(rep.status === 0 && ['## overflow', '## clipped', '## lowContrast', '## unitSplit', '## coveredAtEnd', '## hoverShift', '## small', '## toggleCrop', '## misaligned', '## iconSize', '## sizeMismatch', '## styleMismatch', '## colourDrift', '## sent to a sign-in page', '## error screen', '## untranslated keys']
+check(rep.status === 0 && ['## overflow', '## clipped', '## lowContrast', '## unitSplit', '## coveredAtEnd', '## hoverShift', '## small', '## toggleCrop', '## focusNone', '## focusCrop', '## focusHidden', '## misaligned', '## iconSize', '## sizeMismatch', '## styleMismatch', '## colourDrift', '## sent to a sign-in page', '## error screen', '## untranslated keys']
   .every((h) => text.includes(h)), 'report has a section for each kind');
 
 server.close();

@@ -27,7 +27,7 @@ if (!rows.length) { console.error('no scan rows found in ' + files.join(', ')); 
 // Numbers that change per page (positions, sizes) must not split one element into many findings.
 const norm = (s) => s.replace(/\(-?\d+\.\.-?\d+\)|\d+×\d+|w=\d+|\d+\/\d+[wh]|×\d+|-?\d+\.\.-?\d+ of \d+/g, '#').replace(/\d+/g, '#');   // also digits in labels: one price element, not one group per price
 const KINDS = ['overflow', 'coveredAtEnd', 'unitSplit', 'overlapControls', 'offscreen', 'fixedOverlap', 'bigDialog', 'clipped', 'brokenImg', 'lowContrast', 'squeezed', 'small', 'misaligned', 'sizeMismatch', 'iconSize', 'styleMismatch', 'colourDrift'];
-const ORDER = ['overflow', 'coveredAtEnd', 'unitSplit', 'overlapControls', 'offscreen', 'fixedOverlap', 'bigDialog', 'clipped', 'brokenImg', 'toggleCrop', 'lowContrast', 'hoverShift', 'squeezed', 'misaligned', 'sizeMismatch', 'iconSize', 'styleMismatch', 'colourDrift', 'small', 'hoverNone'];
+const ORDER = ['overflow', 'coveredAtEnd', 'unitSplit', 'overlapControls', 'offscreen', 'fixedOverlap', 'bigDialog', 'clipped', 'brokenImg', 'toggleCrop', 'focusHidden', 'focusCrop', 'lowContrast', 'focusNone', 'hoverShift', 'squeezed', 'misaligned', 'sizeMismatch', 'iconSize', 'styleMismatch', 'colourDrift', 'small', 'hoverNone'];
 const WHAT = {
   overflow: 'page scrolls sideways (element wider than the screen)',
   coveredAtEnd: 'scrolled to the end, a control is still under a fixed bottom bar',
@@ -43,7 +43,10 @@ const WHAT = {
   small: 'tap target under 44 px (phone)',
   hoverShift: 'hovering moves the neighbours',
   hoverNone: 'no hover feedback (pointer only or nothing)',
-  toggleCrop: 'a checkbox or switch cut off by its container when clicked',
+  focusHidden: 'keyboard focus lands on something not visible (a closed menu, an off-screen link)',
+  focusCrop: 'the focus ring is cut off by a container',
+  focusNone: 'no visible focus indicator when reached with Tab',
+  toggleCrop:'a checkbox or switch cut off by its container when clicked',
   misaligned: 'an item a few px off its neighbours, or an icon off its label',
   sizeMismatch: 'controls side by side with different heights',
   iconSize: 'one icon of a set drawn at another size',
@@ -73,6 +76,7 @@ for (const r of rows) {
   for (const [tag, v] of probes) for (const kind of KINDS) for (const item of v[kind] || []) add(kind, item, r.route, where + tag);
   for (const [kind, key] of [['hoverShift', 'layoutShift'], ['hoverNone', 'noFeedback']]) for (const item of r.hover?.[key] || []) add(kind, item, r.route, where);
   for (const item of r.toggle?.cropped || []) add('toggleCrop', item, r.route, where);
+  for (const [kind, key] of [['focusHidden', 'hidden'], ['focusCrop', 'cropped'], ['focusNone', 'noIndicator']]) for (const item of r.focus?.[key] || []) add(kind, item, r.route, where);
   for (const item of r.toggle?.notRestored || []) page('checkbox left changed by the click test (it did not switch back)', `${r.route} ${where}: ${item}`);
   if (r.toggle?.navigated) page('a checkbox click opened another page (click test stopped there)', `${r.route} ${where}`);
 }

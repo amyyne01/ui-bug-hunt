@@ -79,6 +79,7 @@ report them fully.
 | misaligned | one item a few px off same-size neighbours in its row or column; an icon not centred on its label |
 | iconSize / sizeMismatch | one icon of a set at another size; controls side by side with different heights |
 | styleMismatch / colourDrift | same tag + class, one with another colour or font; two almost-equal text colours |
+| focus (desktop, `focus`: true) | Tab through the page, keys only: no visible focus indicator; a focus ring cut by its container; focus on something invisible |
 | toggle (`toggle`: true) | each checkbox / switch clicked, watched every frame for a tick, ripple or ring cut by its container, clicked back |
 | page level | error screen, login wall, redirect, uncaught JS errors, skeleton left on, raw i18n keys, 4xx/5xx |
 

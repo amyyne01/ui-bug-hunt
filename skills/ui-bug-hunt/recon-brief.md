@@ -68,7 +68,7 @@ Write: `{"pwFrom": "" (empty = the skill's own install), "chrome": true, "outIgn
   auth is needed (made with `npx playwright codegen --channel chrome --save-storage=<OUT>/state.json <login url>`);
   `init`: `<OUT>/init.js` when run.initScript is set.
 - `pw-from`: tools.pwFrom when not empty; `channel`: `"chrome"` if tools.chrome else `"chromium"`.
-- `out`: `<OUT>/scan`, `hover`/`resize`/`shots`: true, `budget`: 600, `workers`: 2 (1 if ramGb < 8).
+- `out`: `<OUT>/scan`, `hover`/`resize`/`focus`/`shots`: true, `budget`: 600, `workers`: 2 (1 if ramGb < 8).
 - `toggle`: true (the checkbox click test) when no sign-in is needed. Signed in: only against a mocked API or a
   test account, with `toggle-signed-in`: true too; on production with real data leave both out and say so.
 - If tools.outIgnored is false: add `<OUT>/` to the project's `.gitignore` (tell the user).
