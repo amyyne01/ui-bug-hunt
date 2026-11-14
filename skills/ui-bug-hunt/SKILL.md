@@ -50,6 +50,10 @@ none it falls back to Playwright's Chromium (`npx playwright install chromium`; 
    file; then what was NOT covered (unresolved routes, not-reviewable pages, one data state, untested
    interactions, clean pages not sampled).
 
+9. **After the fixes**: scan again into a NEW folder (`--out <OUT>/scan2`), then
+   `report.mjs <OUT>/report2.md <OUT>/scan2 --baseline <OUT>/scan`: the report opens with what is fixed, what is new
+   and what is still there. Review only the screenshots of new findings.
+
 ## Cost
 
 The browser pass is cheap; reading images is not (about 100-180k tokens per reviewer that opens 60-95 shots).

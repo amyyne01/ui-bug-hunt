@@ -3,13 +3,19 @@
  * ui-bug-hunt report: merge scan JSON files into one Markdown report. Findings are grouped by ELEMENT (the same
  * component broken on 40 routes is one finding listing 40 routes), most widespread first.
  *
- *   node report.mjs <out.md> <scan folder | scan.json ...>
+ *   node report.mjs <out.md> <scan folder | scan.json ...> [--baseline <earlier scan folder>]
+ *
+ * --baseline: after fixes, scan again into a NEW folder and pass the earlier one here: the report opens with what
+ * is fixed, what is new and what is still there (compared by element, not by pixel numbers).
  */
 import fs from 'node:fs';
 import path from 'node:path';
 
-const [outMd, ...files] = process.argv.slice(2);
-if (!outMd || !files.length) { console.error('usage: node report.mjs <out.md> <scan folder | scan.json ...>'); process.exit(2); }
+const args = process.argv.slice(2);
+const bi = args.indexOf('--baseline');
+const baseline = bi >= 0 ? args.splice(bi, 2)[1] : null;   // an earlier scan: the report starts with what is fixed, new, still there
+const [outMd, ...files] = args;
+if (!outMd || !files.length) { console.error('usage: node report.mjs <out.md> <scan folder | scan.json ...> [--baseline <earlier scan folder>]'); process.exit(2); }
 // Scan results: files, or folders whose *.json are read; anything that is not an array of scan rows
 // (scan-config.json, picked.json, recon output) is skipped. No shell glob needed (PowerShell/cmd do not expand them).
 function loadRows(inputs) {
@@ -54,6 +60,7 @@ const WHAT = {
   styleMismatch: 'same component, one drawn with another colour or font',
   colourDrift: 'two text colours that are almost, but not, the same',
 };
+function collect(rows) {
 const groups = new Map();
 const pages = {};
 const page = (k, v) => (pages[k] ||= []).push(v);
@@ -82,9 +89,24 @@ for (const r of rows) {
   for (const item of r.toggle?.notRestored || []) page('checkbox left changed by the click test (it did not switch back)', `${r.route} ${where}: ${item}`);
   if (r.toggle?.navigated) page('a checkbox click opened another page (click test stopped there)', `${r.route} ${where}`);
 }
+return { groups, pages };
+}
+const { groups, pages } = collect(rows);
 const routes = new Set(rows.map((r) => r.route));
 const lines = [`# UI bug hunt — ${rows.length} page loads, ${routes.size} routes`, '',
   'Measured findings. Screenshot-review findings (agents) go in their own tables, deduplicated by component.', ''];
+const diff = {};
+if (baseline) {
+  const old = collect(loadRows([baseline])).groups;
+  if (!old.size && !loadRows([baseline]).length) { console.error('no scan rows found in the baseline ' + baseline); process.exit(2); }
+  const show = (g) => `- \`${g.kind}: ${g.sample.slice(0, 160)}\` — ${[...g.routes].sort().slice(0, 4).join(', ')}`;
+  const gone = [...old].filter(([k]) => !groups.has(k)).map(([, g]) => g);
+  const fixed = gone.filter((g) => [...g.routes].some((r) => routes.has(r)));   // its page was scanned again and it is no longer there
+  const fresh = [...groups].filter(([k]) => !old.has(k)).map(([, g]) => g);
+  Object.assign(diff, { fixed: fixed.length, new: fresh.length, still: groups.size - fresh.length, notRescanned: gone.length - fixed.length });
+  lines.push(`## Since the last scan: ${diff.fixed} fixed, ${diff.new} new, ${diff.still} still there${diff.notRescanned ? `, ${diff.notRescanned} on pages not scanned this time` : ''}`, '',
+    `### Fixed (${fixed.length})`, ...fixed.slice(0, 80).map(show), '', `### New (${fresh.length})`, ...fresh.slice(0, 80).map(show), '');
+}
 for (const [k, v] of Object.entries(pages)) lines.push(`## ${k} (${v.length})`, ...[...new Set(v)].sort().slice(0, 80).map((x) => `- ${x}`), '');
 const counts = {};
 for (const kind of ORDER) {
@@ -99,4 +121,4 @@ for (const kind of ORDER) {
   lines.push('');
 }
 fs.writeFileSync(outMd, lines.join('\n'));
-console.log(`${outMd}: ${rows.length} loads, ${routes.size} routes`, counts, Object.fromEntries(Object.entries(pages).map(([k, v]) => [k, v.length])));
+console.log(`${outMd}: ${rows.length} loads, ${routes.size} routes`, counts, ...(baseline ? [diff] : []), Object.fromEntries(Object.entries(pages).map(([k, v]) => [k, v.length])));

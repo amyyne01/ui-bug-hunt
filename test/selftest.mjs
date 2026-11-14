@@ -182,6 +182,16 @@ const text = fs.existsSync(md) ? fs.readFileSync(md, 'utf8') : '';
 check(rep.status === 0 && ['## overflow', '## clipped', '## lowContrast', '## unitSplit', '## coveredAtEnd', '## hoverShift', '## small', '## toggleCrop', '## stretch', '## focusNone', '## focusCrop', '## focusHidden', '## misaligned', '## iconSize', '## sizeMismatch', '## styleMismatch', '## colourDrift', '## sent to a sign-in page', '## error screen', '## untranslated keys']
   .every((h) => text.includes(h)), 'report has a section for each kind');
 
+// 6. a rescan against an earlier scan: the earlier one had a bug that is gone, and lacked the /clipped page
+const oldDir = path.join(OUT, 'old');
+fs.mkdirSync(oldDir);
+fs.writeFileSync(path.join(oldDir, 'scan.json'), JSON.stringify([...rows.filter((r) => r.route !== '/clipped'),
+  { route: '/', locale: '', vp: 'd', visual: { overflow: ['main > div.old-banner "Old" (0..2000)'] } }]));
+const md2 = path.join(OUT, 'report-diff.md');
+const rep2 = await run('report.mjs', [md2, scanDir, '--baseline', oldDir]);
+const text2 = fs.existsSync(md2) ? fs.readFileSync(md2, 'utf8') : '';
+check(rep2.status === 0 && /Since the last scan: 1 fixed, 1 new, /.test(text2) && /### Fixed \(1\)\n- `overflow: main > div\.old-banner/.test(text2) && /### New \(1\)\n- `clipped: /.test(text2), 'report --baseline: one fixed, one new');
+
 server.close();
 if (fails.length) { console.error(`\n${fails.length} check(s) failed; output kept in ${OUT}`); process.exit(1); }
 fs.rmSync(OUT, { recursive: true, force: true });

@@ -127,6 +127,9 @@ node <scripts>/report.mjs ui-hunt/report.md ui-hunt/scan
 `--matrix "en:d,m,x;ar:m" --locale-mode prefix`. `--budget 600` ends a chunk after 10 minutes; the same command
 resumes it.
 
+After fixing, scan again into a new folder and add `--baseline ui-hunt/scan` to the report command: it then
+opens with what is fixed, what is new and what is still there.
+
 ## Test
 
 ```
