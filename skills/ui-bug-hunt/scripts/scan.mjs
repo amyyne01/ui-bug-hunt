@@ -342,7 +342,7 @@ const TOGGLE_WATCH = `(i, ms) => new Promise((done) => {
   requestAnimationFrame(tick);
 })`;
 async function togglePass(page) {
-  const out = { checked: 0, skipped: 0, cropped: [], notRestored: [] };
+  const out = { checked: 0, skipped: 0, unclickable: 0, cropped: [], notRestored: [] };
   const url = page.url();
   const { kinds, skipped } = await page.evaluate(`(${TOGGLE_MARK})(${TOGGLE_MAX}, ${JSON.stringify(arg('--storage') ? `\\b(${ACTIONS})\\b` : '')})`);
   out.skipped = skipped;
@@ -372,7 +372,7 @@ async function togglePass(page) {
       if (await state(i) === before) continue;   // the click changed nothing: nothing to put back
       await click(i); await page.waitForTimeout(150);
       if (await state(i) !== before) out.notRestored.push(`"${w?.label || ''}"`);
-    } catch { /* not clickable (covered, moved): skip it */ }
+    } catch { out.unclickable++; }   // covered by something, or moved
   }
   return out;
 }

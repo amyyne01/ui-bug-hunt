@@ -87,6 +87,7 @@ for (const r of rows) {
   for (const item of r.stretch?.broke || []) add('stretch', item.replace(/"[^"]*"/, ''), r.route, where);   // the lengthened label is not the real one
   for (const [kind, key] of [['focusHidden', 'hidden'], ['focusCrop', 'cropped'], ['focusNone', 'noIndicator']]) for (const item of r.focus?.[key] || []) add(kind, item, r.route, where);
   for (const item of r.toggle?.notRestored || []) page('checkbox left changed by the click test (it did not switch back)', `${r.route} ${where}: ${item}`);
+  if (r.toggle?.skipped || r.toggle?.unclickable) page('checkboxes NOT tested by the click test (do not read them as clean)', `${r.route} ${where}: ${r.toggle.checked} clicked, ${r.toggle.skipped} skipped for an action-looking label (signed in), ${r.toggle.unclickable} covered or not clickable`);
   if (r.toggle?.navigated) page('a checkbox click opened another page (click test stopped there)', `${r.route} ${where}`);
 }
 return { groups, pages };

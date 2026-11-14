@@ -33,7 +33,7 @@ none it falls back to Playwright's Chromium (`npx playwright install chromium`; 
    with `read-only` matching the API host or path, never clicking actions. Public site: production or local dev.
    Signed in: `npx playwright codegen --channel chrome --save-storage=<OUT>/state.json <login url>`, then `storage`.
 3. **Coverage pass** in its own folder: `--config ... --out <OUT>/coverage --matrix "<main>:d" --no-hover
-   --no-resize --no-shots`. Trace every error screen, failed request, redirect and login wall: a real bug, test
+   --no-resize --no-shots --no-focus --no-toggle --no-stretch`. Trace every error screen, failed request, redirect and login wall: a real bug, test
    data the scan cannot provide (grep the fixtures), or a missing session? Fix the setup or mark the page not
    reviewable. Then delete `<OUT>/coverage`.
 4. **Calibrate on 2 pages** (`--routes` a 2-line file, `--out <OUT>/calib`). Read the JSON and 2-3 shots yourself;

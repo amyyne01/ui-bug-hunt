@@ -1,6 +1,6 @@
 {
   "name": "ui-bug-hunt",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "description": "Hunt small visual bugs on every page of any web app: overflow, clipped text, overlaps, broken layouts at phone/tablet/desktop and on live resize, hover states, low contrast, RTL, tap targets. A browser measures, agents review the screenshots, one report grouped by component.",
   "keywords": [
     "ui",
