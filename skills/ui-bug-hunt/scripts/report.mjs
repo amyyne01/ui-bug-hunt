@@ -90,6 +90,7 @@ for (const r of rows) {
   if (dup) page('duplicate list keys (rows can be doubled or dropped)', `${r.route} ${where}: ${dup.slice(0, 110)}`);
   else if (cons.length) page('console errors', `${r.route} ${where}: ${cons[0].slice(0, 110)}`);
   if (r.placeholderText?.length) page('placeholder text on a shipped page', `${r.route} ${where}: ${r.placeholderText.join(', ')}`);
+  if (r.stillLight) page('asked for dark, the page is still light (the app has its own theme switch: set it with --init; these rows are NOT a dark scan)', `${r.route} ${where}`);
   if (r.skeletons) page('loading skeleton still on screen', `${r.route} ${where}`);
   const keys = r.rawKeys;
   if (keys?.length) page('untranslated keys on screen', `${r.route} ${where}: ${keys.slice(0, 3).join(', ')}`);

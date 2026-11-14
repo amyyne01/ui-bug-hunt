@@ -28,7 +28,8 @@
  *                       covered by another layer), then closed with Escape. Menu items are never clicked. Refused
  *                       with --storage unless --menus-signed-in (a TEST account; action-looking labels are skipped)
  * --dark                scan with the dark colour scheme (prefers-color-scheme: dark); give it its own --out. A theme
- *                       switched by a class or localStorage needs --init instead
+ *                       switched by a class or localStorage needs --init as well (a script that sets it): a page
+ *                       that still has a light background is reported as "asked for dark, still light"
  * --placeholder-text REGEX   text that should not ship (default: coming soon, lorem ipsum, under construction);
  *                       the recon adds the app's own languages
  * --toggle              a pass that clicks: each checkbox and switch (up to --toggle-max, 10) is clicked, watched
@@ -508,6 +509,8 @@ async function visit(browser, job) {
     rec.errorScreen = (rec.status >= 400) || await page.evaluate(([src, flags]) => new RegExp(src, flags).test(document.body.innerText.slice(0, 1500)), [ERROR_TEXT.source, ERROR_TEXT.flags]);
     rec.skeletons = await page.evaluate(() => document.querySelectorAll('.animate-pulse,[data-skeleton],.skeleton').length);
     rec.rawKeys = await page.evaluate(() => (document.body.innerText.match(/\b[a-z][a-zA-Z]+\.[a-z][a-zA-Z]+(\.[a-zA-Z_]+)+\b/g) || []).filter((s) => !/\.(com|net|org|info|io|dev|app|ai|co|[a-z]{2}|m?js|css|html?|png|jpe?g|gif|svg|webp|pdf)$/.test(s)).slice(0, 8));   // "orders.new.title" yes; "site.co.uk", "app.js" no
+    // --dark only sets the device preference: an app with its own theme switch stays light, and must not be reported as dark
+    if (flag('--dark')) rec.stillLight = await page.evaluate(() => { for (const el of [document.body, document.documentElement]) { const m = getComputedStyle(el).backgroundColor.match(/[\d.]+/g); if (m && (m.length < 4 || +m[3] > 0.5)) return (0.2126 * m[0] + 0.7152 * m[1] + 0.0722 * m[2]) / 255 > 0.5; } return true; });
     rec.placeholderText = await page.evaluate(([src, flags]) => [...new Set(document.body.innerText.match(new RegExp(src, flags + 'g')) || [])].slice(0, 3), [PLACEHOLDER_TEXT.source, PLACEHOLDER_TEXT.flags]);
     rec.visual = await page.evaluate(`(${PROBE})(${touch})`);
     if (!touch && flag('--hover') && !rec.errorScreen) rec.hover = await hoverPass(page);
@@ -631,6 +634,8 @@ await Promise.all(Array.from({ length: Math.max(1, WORKERS) }, async () => {
   }
 }));
 await browser.close();
+const light = rows.filter((r) => r.stillLight).length;
+if (light) console.log(`${light} of ${rows.length} page load(s) still had a LIGHT background: --dark only sets the device preference. If the app has its own theme switch, set it with --init and scan again`);
 console.log(next < jobs.length ? `budget reached: ${jobs.length - next} page loads left, run the same command again to continue` : 'all page loads done');
 const failed = rows.filter((r) => r.fatal).length;
 if (failed) console.log(`${failed} page load(s) failed (timeout, network): run the same command again to retry them`);

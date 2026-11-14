@@ -115,7 +115,8 @@ was not covered. Nothing is fixed until you say so.
   frame for anything cut off, then clicks again to put it back. `--menus` opens each menu button, measures the
   popup and closes it with Escape; it never clicks a menu item. Both are refused with `--storage` unless you add
   `--toggle-signed-in` / `--menus-signed-in` (a test account or a mocked API only).
-- **Dark theme**: run the scan again with `--dark --out ui-hunt/scan-dark`.
+- **Dark theme**: run the scan again with `--dark --out ui-hunt/scan-dark`. It sets the device preference only; if
+  your app has its own theme switch, set it with `--init <script>` too. Pages that stayed light are reported.
 - **Cost**: the browser pass is cheap. Reading screenshots is the expensive part, about 100-180k tokens per
   review agent, so `pick.mjs` keeps about 1.2 images per page instead of 3-4.
 - **Windows Git Bash**: run `export MSYS_NO_PATHCONV=1` first, or arguments like `/pricing` turn into Windows paths.

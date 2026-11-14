@@ -42,7 +42,8 @@ none it falls back to Playwright's Chromium (`npx playwright install chromium`; 
 5. **Wide run in chunks**: the config's `budget` (seconds) ends a chunk; the same command resumes. Matrix: main
    locale desktop (hover + resize) + phone 390 + 320, RTL locale phone 390. Low RAM: `workers` 2, one scan at a time.
    A site with a dark theme: the same command again with `--dark --out <OUT>/scan-dark` (a theme switched by a
-   class or localStorage: an `init` script instead), then pass both folders to `report.mjs` (its rows are marked `/dark`). The dark scan is measured only: run
+   class or localStorage: an `init` script instead), then pass both folders to `report.mjs` (its rows are marked `/dark`). `--dark` only sets the device preference: the scanner reports every page
+   that stayed light, and those rows are not a dark scan. The dark scan is measured only: run
    `pick.mjs` on the light folder.
 6. **Pick, then review.** `node <SKILL>/scripts/pick.mjs --shots <OUT>/scan/shots [--main <loc>] [--rtl <loc>] --out <OUT>/review <OUT>/scan`,
    then one Sonnet-tier agent per `batch-N.md`, at most 2 at a time, brief = `review-brief.md`. Each brief lists
@@ -114,6 +115,7 @@ click with no result, anything behind a click other than a checkbox or a menu bu
 | `toggle` on a signed-in production app (a switch saves the moment it is clicked) | public pages, a mocked API or a test account; signed in it needs `toggle-signed-in` (`menus`: `menus-signed-in`) |
 | A menu left open makes every later click look dead and every later shot wrong | the menu test closes each popup and reloads the page when one will not close; do the same in any manual probe |
 | "Opens but invisible" judged while the menu is still animating | the menu test waits 450 ms; open the control by hand before calling it a bug |
+| A "dark" scan of an app with its own theme switch measures the light theme | read "asked for dark, the page is still light" in the report; set the theme in an `init` script, open one shot to check |
 | A dark and a light scan in one folder (the second is skipped as done) | `--dark` gets its own `--out`; the scanner refuses otherwise |
 | Mock data invents bugs (ids the real catalogue lacks, reused keys, slugs with no translation) | check the real API sends the same shape before reporting or fixing |
 | A fix that passes type-check and unit tests, never looked at | step 9: rescan at 320 / 390 / 768, both directions, both themes; a repair made after review is rescanned too |
