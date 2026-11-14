@@ -211,8 +211,9 @@ const darkRoutes = path.join(OUT, 'dark-routes.txt');
 fs.writeFileSync(darkRoutes, '/dark\n/\n');   // '/' has no dark styles: it must be reported as still light
 const dark = await run('scan.mjs', ['--base', BASE, '--routes', darkRoutes, '--matrix', '-:d', '--dark', '--wait', '300', '--out', path.join(OUT, 'dark'), ...extra]);
 const darkRows = fs.existsSync(path.join(OUT, 'dark', 'scan.json')) ? JSON.parse(fs.readFileSync(path.join(OUT, 'dark', 'scan.json'), 'utf8')) : [];
-check(dark.status === 0 && darkRows[0]?.dark === true && darkRows[0].visual?.lowContrast?.length > 0 && darkRows[0].stillLight === false, '--dark: dark text on the dark background is caught');
-check(darkRows[1]?.stillLight === true && /1 of 2 page load\(s\) still had a LIGHT background/.test(dark.stdout), '--dark: a page that ignores the dark preference is reported as still light');
+const dk = (route) => darkRows.find((r) => r.route === route);   // two workers: rows come in the order the pages finish
+check(dark.status === 0 && dk('/dark')?.dark === true && dk('/dark').visual?.lowContrast?.length > 0 && dk('/dark').stillLight === false, '--dark: dark text on the dark background is caught');
+check(dk('/')?.stillLight === true && /1 of 2 page load\(s\) still had a LIGHT background/.test(dark.stdout), '--dark: a page that ignores the dark preference is reported as still light');
 check((await run('scan.mjs', ['--base', BASE, '--routes', darkRoutes, '--matrix', '-:d', '--dark', '--out', scanDir, ...extra])).status === 2, '--dark is refused in a folder that holds a light scan');
 
 // 3. a second run resumes: nothing left to do
