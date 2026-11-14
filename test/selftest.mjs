@@ -19,6 +19,7 @@ const page = (body, css = '') => `<!doctype html><html lang="en"><head><meta cha
 .btn{display:inline-block;min-width:120px;padding:12px 16px;background:#1a4fd6;color:#fff;text-decoration:none}.btn:hover{background:#0b2f8a}${css}</style></head>
 <body><main><h1>Fixture</h1>${body}</main></body></html>`;
 
+const icon = (s = 20, extra = '') => `<svg width="${s}" height="${s}" viewBox="0 0 20 20" ${extra}><circle cx="10" cy="10" r="8" fill="currentColor"/></svg>`;
 // route -> [html, the check that must flag it (null = must be clean)]
 const PAGES = {
   '/': [page('<p>A clean page.</p><a class="btn" href="/">Home</a>'), null],
@@ -38,6 +39,34 @@ const PAGES = {
   '/raw-keys': [page('<p>orders.new.title</p>'), 'rawKeys'],
   '/writes': [page('<p>Saves on load.</p><script>fetch("/api/save",{method:"POST"}).catch(()=>{})</script>'), 'blockedWrites'],
   '/search?q=shoes': [page('<p>Results.</p><a class="btn" href="/">Home</a>'), null],
+  // a realistic page that must stay clean: an icon nav with an active item, uneven cards, wrapped tags, a form row, checkboxes
+  '/app': [page(`<nav class="nav">${['Home', 'Orders', 'Clients', 'Reports', 'Settings'].map((t, i) => `<a class="nl${i ? '' : ' active'}"${i ? '' : ' aria-current="page"'} href="/app">${icon()}<span>${t}</span></a>`).join('')}</nav>
+<div class="cards"><div class="card"><h3>Alpha</h3><p>Short.</p></div><div class="card"><h3>Beta</h3><p>A longer description that takes a few more lines than its neighbours do.</p></div><div class="card"><h3>Gamma</h3><p>Medium length text here.</p></div></div>
+<div class="tags">${['design', 'billing', 'mobile', 'checkout', 'search', 'profile', 'reports', 'onboarding', 'emails'].map((t) => `<span class="tag">${t}</span>`).join('')}</div>
+<div class="frm"><input class="in" type="email" aria-label="Email"><button class="go" type="button">Subscribe</button></div>
+<label class="row"><input type="checkbox"> Email me the report</label>
+<label class="ck2"><input class="sr2" type="checkbox"><span class="box2"></span> Dark mode</label>`,
+  `.nav{display:flex;flex-wrap:wrap;gap:8px}.nl{display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:0 12px;color:#111;text-decoration:none}.nl:hover{background:#eee}.nl.active{color:#1a4fd6;font-weight:700}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;align-items:start;margin:16px 0}.card{border:1px solid #999;padding:12px}.card h3{margin:0}
+.tags{display:flex;flex-wrap:wrap;gap:8px;max-width:420px}.tag{padding:4px 10px;background:#eee;border-radius:12px;font-size:14px}
+.frm{display:flex;gap:8px;max-width:420px;margin:16px 0}.in{flex:1;min-width:0;height:44px;box-sizing:border-box;padding:0 12px;border:1px solid #777;font-size:16px}.go{height:44px;padding:0 16px;border:0;background:#1a4fd6;color:#fff;font-size:16px}.go:hover{background:#0b2f8a}
+.row,.ck2{display:flex;align-items:center;gap:10px;min-height:44px;padding:0 16px;position:relative}.sr2{position:absolute;opacity:0;width:20px;height:20px;margin:0}
+.box2{position:relative;display:block;width:20px;height:20px;box-sizing:border-box;border:2px solid #333}.sr2:checked+.box2{background:#1a4fd6}
+.box2::after{content:"";position:absolute;left:-8px;top:-8px;width:32px;height:32px;border-radius:50%;background:rgba(26,79,214,.2);transform:scale(0);transition:transform .15s}.sr2:checked+.box2::after{transform:scale(1)}`), null],
+  // a custom checkbox whose ripple (::after) is cut by its wrapper once checked, and one cut only while it animates
+  '/checkbox-crop': [page(`<div class="clip"><label class="ck"><input class="sr" type="checkbox" aria-label="Remember me"><span class="box"></span></label></div>
+<div class="clip2"><input class="pop" type="checkbox" aria-label="Pop"></div>`,
+  `.clip{overflow:hidden;width:24px;height:24px}.ck{display:block;position:relative;width:24px;height:24px}.sr{position:absolute;opacity:0;width:24px;height:24px;margin:0}
+.box{display:block;position:relative;width:20px;height:20px;border:2px solid #333}.box::after{content:"";position:absolute;left:-12px;top:-12px;width:44px;height:44px;border-radius:50%;background:rgba(26,79,214,.25);transform:scale(0);transition:transform .2s}.sr:checked+.box::after{transform:scale(1)}
+.clip2{overflow:hidden;width:22px;height:22px;margin-top:24px}.pop{appearance:none;display:block;box-sizing:border-box;width:22px;height:22px;margin:0;border:2px solid #333}.pop:checked{background:#1a4fd6;animation:pop .3s}@keyframes pop{50%{transform:scale(1.5)}}`), 'toggle'],
+  '/misaligned': [page(`<div class="r"><a class="it" href="/">One</a><a class="it" href="/">Two</a><a class="it" href="/" style="position:relative;top:5px">Three</a><a class="it" href="/">Four</a></div>
+<a class="lk" href="/">${icon(16, 'style="position:relative;top:-8px"')}<span>Settings</span></a>`,
+  '.r{display:flex;gap:8px}.it{display:block;width:90px;height:44px;line-height:44px;text-align:center;background:#eee;color:#111;text-decoration:none}.it:hover{background:#ddd}.lk{display:inline-flex;align-items:center;gap:8px;min-height:44px;margin-top:20px;color:#111}'), 'misaligned'],
+  '/icon-size': [page(`<ul class="ic">${[20, 20, 20, 26, 20].map((s) => `<li><a href="/">${icon(s)}<span>Item</span></a></li>`).join('')}</ul>`,
+    '.ic{list-style:none;padding:0;display:flex;flex-wrap:wrap;gap:12px}.ic a{display:inline-flex;align-items:center;gap:8px;min-height:44px;color:#111}'), 'iconSize'],
+  '/size-mismatch': [page('<div style="display:flex;gap:8px;align-items:center"><input aria-label="Email" style="height:44px;box-sizing:border-box;border:1px solid #777;width:160px"><button type="button" style="height:36px;border:0;background:#1a4fd6;color:#fff;padding:0 16px">Go</button></div>'), 'sizeMismatch'],
+  '/style-mismatch': [page(`<ul>${['Anna', 'Boris', 'Chloe', 'David', 'Emma'].map((n, i) => `<li class="who"${i === 2 ? ' style="color:#b00020"' : ''}>${n}</li>`).join('')}</ul>`), 'styleMismatch'],
+  '/colour-drift': [page(`${'<p style="color:#333333">Paragraph text here.</p>'.repeat(8)}${'<p style="color:#353535">A stray shade.</p>'.repeat(2)}`), 'colourDrift'],
 };
 let posts = 0;
 const server = http.createServer((req, res) => {
@@ -74,7 +103,7 @@ const extra = process.argv.slice(2);   // e.g. --channel chromium
 check((await run('scan.mjs', ['--base', BASE, '--routes', routes, '--read_only', 'x'])).status === 2, 'a mistyped flag is refused');
 
 // 2. the scan
-const scan = await run('scan.mjs', ['--base', BASE, '--routes', routes, '--matrix', '-:d,m', '--hover', '--resize', '--shots',
+const scan = await run('scan.mjs', ['--base', BASE, '--routes', routes, '--matrix', '-:d,m', '--hover', '--resize', '--shots', '--toggle',
   '--read-only', '/api/', '--wait', '400', '--workers', '1', '--out', scanDir, ...extra]);
 process.stdout.write(scan.stdout.split(/\r?\n/).slice(-4).join('\n') + scan.stderr);
 check(scan.status === 0 && /all page loads done/.test(scan.stdout), 'scan ran to the end');
@@ -85,6 +114,14 @@ for (const [route, [, kind]] of Object.entries(PAGES)) {
   if (kind === null) {
     check(d.visual?.count === 0 && m.visual?.count === 0 && !d.errorScreen && !d.hover?.layoutShift.length
       && Object.values(d.resize || {}).every((v) => v.count === 0), `${route} is clean at every size`);
+    if (route === '/app') check(d.toggle?.checked === 2 && !d.toggle.cropped.length && !d.toggle.notRestored.length && m.toggle?.checked === 2 && !m.toggle.cropped.length, '/app: both checkboxes clicked, none cut, both put back');
+  } else if (kind === 'toggle') {
+    check(d.toggle?.cropped.some((s) => s.includes('Remember me') && s.includes('once checked')), '/checkbox-crop: a ripple cut by its wrapper once checked');
+    check(d.toggle?.cropped.some((s) => s.includes('Pop') && s.includes('during the click animation')), '/checkbox-crop: a box cut only while it animates');
+    check(!d.toggle?.notRestored.length, '/checkbox-crop: checkboxes put back');
+  } else if (kind === 'misaligned') {
+    check(d.visual?.misaligned?.some((s) => s.includes('Three') && s.includes('5px lower')), '/misaligned: an item 5px lower than its neighbours');
+    check(d.visual?.misaligned?.some((s) => s.includes('icon sits')), '/misaligned: an icon off its label');
   } else if (kind === 'hover') {
     check(d.hover?.layoutShift.some((s) => s.includes('Grow')), '/hover: a link that moves its neighbours');
     check(d.hover?.noFeedback.some((s) => s.includes('Flat link')), '/hover: a link with no hover feedback');
@@ -104,12 +141,14 @@ check(/0 page loads to do/.test((await run('scan.mjs', ['--base', BASE, '--route
 
 // 3b. pages from a sitemap, thinned by --max-routes
 const sm = await run('scan.mjs', ['--base', BASE, '--sitemap', `${BASE}/sitemap.xml`, '--max-routes', '1', '--matrix', '-:m', '--wait', '200', '--out', path.join(OUT, 'sitemap'), ...extra]);
-check(/19 routes, keeping 1 /.test(sm.stdout) && /all page loads done/.test(sm.stdout), 'pages read from a sitemap');
+const inMap = Object.keys(PAGES).filter((r) => !r.includes('?')).length + 3;
+check(sm.stdout.includes(`${inMap} routes, keeping 1 `) && /all page loads done/.test(sm.stdout), 'pages read from a sitemap');
 const state = path.join(OUT, 'state.json');
 fs.writeFileSync(state, '{"cookies":[],"origins":[]}');
 const signed = await run('scan.mjs', ['--base', BASE, '--sitemap', `${BASE}/sitemap.xml`, '--storage', state, '--max-routes', '1', '--matrix', '-:m', '--wait', '200', '--out', path.join(OUT, 'signed'), ...extra]);
-check(/1 action-looking sitemap page/.test(signed.stdout) && /18 routes, keeping 1 /.test(signed.stdout), 'signed in: the action-looking sitemap page is left out');
+check(/1 action-looking sitemap page/.test(signed.stdout) && signed.stdout.includes(`${inMap - 1} routes, keeping 1 `), 'signed in: the action-looking sitemap page is left out');
 check((await run('scan.mjs', ['--base', BASE, '--crawl', '5', '--storage', state, '--out', path.join(OUT, 'crawl'), ...extra])).status === 2, 'signed in: crawling is refused');
+check((await run('scan.mjs', ['--base', BASE, '--routes', routes, '--toggle', '--storage', state, '--out', path.join(OUT, 'tg'), ...extra])).status === 2, 'signed in: clicking checkboxes is refused');
 
 // 4. pick: flagged pages are opened, error pages are not
 const review = path.join(OUT, 'review');
@@ -127,7 +166,7 @@ check(all.status === 0 && fs.readFileSync(path.join(OUT, 'review-all', 'batch-1.
 const md = path.join(OUT, 'report.md');
 const rep = await run('report.mjs', [md, scanDir]);
 const text = fs.existsSync(md) ? fs.readFileSync(md, 'utf8') : '';
-check(rep.status === 0 && ['## overflow', '## clipped', '## lowContrast', '## unitSplit', '## coveredAtEnd', '## hoverShift', '## small', '## sent to a sign-in page', '## error screen', '## untranslated keys']
+check(rep.status === 0 && ['## overflow', '## clipped', '## lowContrast', '## unitSplit', '## coveredAtEnd', '## hoverShift', '## small', '## toggleCrop', '## misaligned', '## iconSize', '## sizeMismatch', '## styleMismatch', '## colourDrift', '## sent to a sign-in page', '## error screen', '## untranslated keys']
   .every((h) => text.includes(h)), 'report has a section for each kind');
 
 server.close();

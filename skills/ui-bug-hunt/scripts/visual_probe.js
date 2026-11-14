@@ -169,7 +169,130 @@
     if ((r.bottom > vh + 2 || r.top < -2) && !scrolls) out.bigDialog.push(`${sel(d)} ${Math.round(r.top)}..${Math.round(r.bottom)} of ${vh}`);
     if (r.right > vw + 2 || r.left < -2) out.bigDialog.push(`${sel(d)} x ${Math.round(r.left)}..${Math.round(r.right)} of ${vw}`);
   }
-  out.count = ['overflow', 'coveredAtEnd', 'unitSplit', 'clipped', 'squeezed', 'brokenImg', 'overlapControls', 'offscreen', 'fixedOverlap', 'lowContrast', 'bigDialog']
+  // 9. consistency between like elements. Peers = 3+ visible same-tag children of one parent (nav links, list
+  //    items, cards, tags). An item marked active / selected / disabled is allowed to differ.
+  out.misaligned = []; out.iconSize = []; out.sizeMismatch = []; out.styleMismatch = []; out.colourDrift = [];
+  const modeOf = (vals) => { const m = new Map(); for (const x of vals) m.set(x, (m.get(x) || 0) + 1); return [...m.entries()].sort((a, b) => b[1] - a[1])[0]; };
+  const special = (el) => el.matches('[aria-current]:not([aria-current="false"]),[aria-selected="true"],[aria-pressed="true"],[aria-checked="true"],[data-state="active"],[data-state="on"],[data-active],[disabled],[aria-disabled="true"]')
+    || /(^|[\s_-])(active|selected|current|disabled)($|[\s_-])/i.test(typeof el.className === 'string' ? el.className : '');
+  const push = (map, k, x) => { const a = map.get(k); if (a) a.push(x); else map.set(k, [x]); };
+  const buckets = (items, side, tol) => { const rows = []; for (const it of [...items].sort((a, b) => a.r[side] - b.r[side])) { const row = rows.find((w) => Math.abs(w[0].r[side] - it.r[side]) <= tol); if (row) row.push(it); else rows.push([it]); } return rows; };
+  const groups = [];
+  for (const p of [...document.body.querySelectorAll('*')].slice(0, 4000)) {
+    if (groups.length >= 300) break;
+    if (p.children.length < 3 || p.closest('svg')) continue;
+    const byTag = new Map();
+    for (const c of p.children) { if (['SCRIPT', 'STYLE', 'BR', 'OPTION'].includes(c.tagName) || !visible(c)) continue; const r = c.getBoundingClientRect(); if (inView(r)) push(byTag, c.tagName, { el: c, r }); }
+    for (const g of byTag.values()) if (g.length >= 3) groups.push(g);
+  }
+  // 9a. one item of a row sits a few px higher/lower than same-height neighbours (or, in a single column, starts
+  //     a few px further left/right than same-width neighbours)
+  const shifted = (items, side, size, far, near) => {
+    if (items.length < 3) return;
+    const [s] = modeOf(items.map((it) => Math.round(it.r[size])));
+    const same = items.filter((it) => Math.abs(it.r[size] - s) <= 1);
+    if (same.length < 3) return;
+    const [m, n] = modeOf(same.map((it) => Math.round(it.r[side])));
+    if (n < 2 || same.length - n > Math.max(1, same.length / 3)) return;
+    for (const it of same) {
+      const d = Math.round(it.r[side]) - m;
+      if (Math.abs(d) >= 2 && Math.abs(d) <= 12 && !special(it.el) && !/absolute|fixed/.test(getComputedStyle(it.el).position) && out.misaligned.length < 8)
+        out.misaligned.push(`${sel(it.el)} sits ${Math.abs(d)}px ${d > 0 ? far : near} than its ${n} neighbours`);
+    }
+  };
+  for (const g of groups) {
+    const rows = buckets(g, 'top', 12);
+    for (const row of rows) shifted(row, 'top', 'height', 'lower', 'higher');
+    if (rows.every((w) => w.length === 1)) for (const col of buckets(g, 'left', 12)) shifted(col, 'left', 'width', 'further right', 'further left');
+  }
+  // 9b. an icon not centred on the label beside it
+  for (const c of document.querySelectorAll('a[href],button,[role=button],[role=tab],label')) {
+    if (out.misaligned.length >= 8) break;
+    if (!visible(c)) continue;
+    const icons = [...c.querySelectorAll('svg,img')].filter((i) => !i.parentElement.closest('svg') && visible(i));
+    if (icons.length !== 1) continue;
+    const ir = icons[0].getBoundingClientRect();
+    if (ir.height < 8 || ir.height > 40 || !inView(ir)) continue;
+    const tw = document.createTreeWalker(c, NodeFilter.SHOW_TEXT);
+    let tn = tw.nextNode();
+    while (tn && (tn.textContent.trim().length < 2 || tn.parentElement.closest('svg') || !visible(tn.parentElement))) tn = tw.nextNode();
+    if (!tn) continue;
+    const range = document.createRange(); range.selectNodeContents(tn);
+    const tr = [...range.getClientRects()].find((r) => r.width > 0);
+    if (!tr || (tr.right > ir.left + 1 && tr.left < ir.right - 1)) continue;   // stacked (icon above its label), not side by side
+    if (c.getBoundingClientRect().height > 72) continue;   // a card with artwork, not an icon + label row
+    const d = (ir.top + ir.bottom) / 2 - (tr.top + tr.bottom) / 2;
+    if (Math.abs(d) > 3 && Math.abs(d) < Math.max(ir.height, tr.height)) out.misaligned.push(`${sel(c)}: its icon sits ${Math.round(Math.abs(d))}px ${d > 0 ? 'lower' : 'higher'} than its label`);
+  }
+  // 9c. one icon of a set drawn at another size (peers: the same place in 3+ sibling items)
+  const iconSets = new Map();
+  for (const ic of [...document.querySelectorAll('svg,img')].slice(0, 600)) {
+    if (ic.parentElement.closest('svg') || !visible(ic)) continue;
+    const r = ic.getBoundingClientRect();
+    if (!inView(r) || r.width < 8 || r.width > 64 || r.height < 8 || r.height > 64 || r.width / r.height > 1.34 || r.height / r.width > 1.34) continue;
+    let path = '';
+    for (let a = ic, k = 0; a.parentElement && k < 5; a = a.parentElement, k++) {
+      const p = a.parentElement;
+      if ([...p.children].filter((x) => x.tagName === a.tagName).length >= 3) { if (!iconSets.has(p)) iconSets.set(p, new Map()); push(iconSets.get(p), path, { ic, w: Math.round(r.width), h: Math.round(r.height) }); break; }
+      path += '<' + a.tagName;
+    }
+  }
+  for (const sets of iconSets.values()) for (const list of sets.values()) {
+    if (list.length < 4 || out.iconSize.length >= 8) continue;   // 3 of a kind + the odd one: fewer is artwork, not a set
+    const [size, n] = modeOf(list.map((x) => `${x.w}×${x.h}`));
+    const [mw, mh] = size.split('×').map(Number);
+    const odd = list.filter((x) => Math.abs(x.w - mw) >= 2 || Math.abs(x.h - mh) >= 2);
+    if (n >= 3 && odd.length && odd.length <= Math.max(1, list.length / 3))
+      for (const x of odd.slice(0, 2)) out.iconSize.push(`${sel(x.ic.closest('a,button,li,[role=tab],label') || x.ic)}: icon ${x.w}×${x.h}, its ${n} neighbours ${size}`);
+  }
+  // 9d. controls side by side with different heights (an input next to its button)
+  const rowsOf = new Map();
+  for (const c of document.querySelectorAll('button,[role=button],a[class*=btn],a[class*=button],input:not([type=hidden]):not([type=checkbox]):not([type=radio]):not([type=range]):not([type=file]):not([type=color]),select')) {
+    if (!visible(c)) continue;
+    const r = c.getBoundingClientRect(), cs = getComputedStyle(c), bg = rgb(cs.backgroundColor);
+    if (!inView(r) || r.height < 16 || ((!bg || bg.a === 0) && parseFloat(cs.borderTopWidth) === 0)) continue;   // text-only links are not sized like buttons
+    push(rowsOf, c.parentElement, { el: c, r, h: Math.round(r.height), mid: (r.top + r.bottom) / 2 });
+  }
+  for (const items of rowsOf.values()) {
+    const rows = []; for (const it of items) { const row = rows.find((w) => Math.abs(w[0].mid - it.mid) <= 6); if (row) row.push(it); else rows.push([it]); }
+    for (const row of rows) {
+      if (row.length < 2 || out.sizeMismatch.length >= 8) continue;
+      const lo = row.reduce((a, b) => (b.h < a.h ? b : a)), hi = row.reduce((a, b) => (b.h > a.h ? b : a));
+      if (hi.h - lo.h >= 2 && hi.h - lo.h <= hi.h * 0.3) out.sizeMismatch.push(`${sel(lo.el)} is ${lo.h}px tall next to ${sel(hi.el)} at ${hi.h}px`);
+    }
+  }
+  // 9e. same component (same tag and class, 4+ peers), one drawn with another colour or font
+  for (const g of groups) {
+    if (out.styleMismatch.length >= 8) break;
+    const cls = g[0].el.className;
+    if (typeof cls !== 'string' || (!cls && !['LI', 'A', 'BUTTON'].includes(g[0].el.tagName)) || g.some((it) => it.el.className !== cls)) continue;
+    const peers = g.filter((it) => !special(it.el) && !it.el.getAnimations?.().length);
+    if (peers.length < 4) continue;
+    for (const prop of ['color', 'backgroundColor', 'fontSize', 'fontWeight', 'fontFamily']) {
+      const vals = peers.map((it) => getComputedStyle(it.el)[prop]);
+      const [m, n] = modeOf(vals);
+      const odd = peers.filter((it, i) => vals[i] !== m);
+      if (!odd.length || odd.length > Math.max(1, peers.length / 4)) continue;
+      for (const it of odd.slice(0, 2)) out.styleMismatch.push(`${sel(it.el)} has ${prop} ${getComputedStyle(it.el)[prop].slice(0, 40)} where its ${n} neighbours have ${m.slice(0, 40)}`);
+      break;
+    }
+  }
+  // 9f. two text colours that are almost, but not, the same (a stray shade next to the real one)
+  const shades = new Map();
+  for (const el of [...document.querySelectorAll('h1,h2,h3,h4,p,span,a,button,label,td,th,li,small,strong')].slice(0, 1500)) {
+    if (![...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim().length > 1) || !visible(el) || el.getAnimations?.().length) continue;
+    const c = rgb(getComputedStyle(el).color);
+    if (!c || c.a < 1) continue;
+    const k = `${c.r}, ${c.g}, ${c.b}`, e = shades.get(k) || { c, k, n: 0, el };
+    e.n++; shades.set(k, e);
+  }
+  const palette = [...shades.values()].sort((a, b) => b.n - a.n).slice(0, 40);
+  for (const a of palette) for (const b of palette) {
+    const d = [Math.abs(a.c.r - b.c.r), Math.abs(a.c.g - b.c.g), Math.abs(a.c.b - b.c.b)];
+    if (out.colourDrift.length < 6 && a.n >= b.n * 3 && Math.max(...d) >= 1 && Math.max(...d) <= 4 && d[0] + d[1] + d[2] <= 8)
+      out.colourDrift.push(`rgb(${b.k}) on ${b.n} text(s), e.g. ${sel(b.el)}, is almost rgb(${a.k}) used on ${a.n}`);
+  }
+  out.count = ['overflow', 'coveredAtEnd', 'unitSplit', 'clipped', 'squeezed', 'brokenImg', 'overlapControls', 'offscreen', 'fixedOverlap', 'lowContrast', 'bigDialog', 'misaligned', 'iconSize', 'sizeMismatch', 'styleMismatch', 'colourDrift']
     .reduce((n, k) => n + out[k].length, 0) + (touch ? out.small.length : 0);
   return out;
 }

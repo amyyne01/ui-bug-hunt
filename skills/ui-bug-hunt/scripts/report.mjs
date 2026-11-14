@@ -26,8 +26,8 @@ if (!rows.length) { console.error('no scan rows found in ' + files.join(', ')); 
 
 // Numbers that change per page (positions, sizes) must not split one element into many findings.
 const norm = (s) => s.replace(/\(-?\d+\.\.-?\d+\)|\d+×\d+|w=\d+|\d+\/\d+[wh]|×\d+|-?\d+\.\.-?\d+ of \d+/g, '#').replace(/\d+/g, '#');   // also digits in labels: one price element, not one group per price
-const KINDS = ['overflow', 'coveredAtEnd', 'unitSplit', 'overlapControls', 'offscreen', 'fixedOverlap', 'bigDialog', 'clipped', 'brokenImg', 'lowContrast', 'squeezed', 'small'];
-const ORDER = ['overflow', 'coveredAtEnd', 'unitSplit', 'overlapControls', 'offscreen', 'fixedOverlap', 'bigDialog', 'clipped', 'brokenImg', 'lowContrast', 'hoverShift', 'squeezed', 'small', 'hoverNone'];
+const KINDS = ['overflow', 'coveredAtEnd', 'unitSplit', 'overlapControls', 'offscreen', 'fixedOverlap', 'bigDialog', 'clipped', 'brokenImg', 'lowContrast', 'squeezed', 'small', 'misaligned', 'sizeMismatch', 'iconSize', 'styleMismatch', 'colourDrift'];
+const ORDER = ['overflow', 'coveredAtEnd', 'unitSplit', 'overlapControls', 'offscreen', 'fixedOverlap', 'bigDialog', 'clipped', 'brokenImg', 'toggleCrop', 'lowContrast', 'hoverShift', 'squeezed', 'misaligned', 'sizeMismatch', 'iconSize', 'styleMismatch', 'colourDrift', 'small', 'hoverNone'];
 const WHAT = {
   overflow: 'page scrolls sideways (element wider than the screen)',
   coveredAtEnd: 'scrolled to the end, a control is still under a fixed bottom bar',
@@ -43,6 +43,12 @@ const WHAT = {
   small: 'tap target under 44 px (phone)',
   hoverShift: 'hovering moves the neighbours',
   hoverNone: 'no hover feedback (pointer only or nothing)',
+  toggleCrop: 'a checkbox or switch cut off by its container when clicked',
+  misaligned: 'an item a few px off its neighbours, or an icon off its label',
+  sizeMismatch: 'controls side by side with different heights',
+  iconSize: 'one icon of a set drawn at another size',
+  styleMismatch: 'same component, one drawn with another colour or font',
+  colourDrift: 'two text colours that are almost, but not, the same',
 };
 const groups = new Map();
 const pages = {};
@@ -66,6 +72,9 @@ for (const r of rows) {
   const probes = [['', r.visual || {}], ...Object.entries(r.resize || {}).map(([w, v]) => [` resized${w}`, v || {}])];
   for (const [tag, v] of probes) for (const kind of KINDS) for (const item of v[kind] || []) add(kind, item, r.route, where + tag);
   for (const [kind, key] of [['hoverShift', 'layoutShift'], ['hoverNone', 'noFeedback']]) for (const item of r.hover?.[key] || []) add(kind, item, r.route, where);
+  for (const item of r.toggle?.cropped || []) add('toggleCrop', item, r.route, where);
+  for (const item of r.toggle?.notRestored || []) page('checkbox left changed by the click test (it did not switch back)', `${r.route} ${where}: ${item}`);
+  if (r.toggle?.navigated) page('a checkbox click opened another page (click test stopped there)', `${r.route} ${where}`);
 }
 const routes = new Set(rows.map((r) => r.route));
 const lines = [`# UI bug hunt — ${rows.length} page loads, ${routes.size} routes`, '',

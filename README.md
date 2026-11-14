@@ -21,6 +21,10 @@ desktop sizes. It writes a report. It does not change your code.
 | A number split from its unit ("1,250" / "USD") | |
 | Low contrast, broken images, tap targets under 44 px | |
 | No hover feedback, hover that moves the neighbours | |
+| An item a few px off its neighbours, an icon off its label | |
+| One icon of a set at another size, controls of different heights in a row | |
+| Same component with another colour or font, two almost-equal text colours | |
+| A checkbox or switch cut off when clicked, animation included (`--toggle`) | |
 | Layouts that break on live resize to 768 / 390 / 320 | |
 | Error screens, login walls, raw i18n keys, failed requests | |
 
@@ -97,7 +101,10 @@ was not covered. Nothing is fixed until you say so.
   Match the API host or path only, never the site's own pages.
 - **`--crawl` follows links by itself**: use it on public pages or a test account, never a signed-in production
   admin. The scanner refuses to crawl with `--storage` unless you add `--crawl-signed-in`.
-- **The scanner never clicks** buttons or submits forms. It loads, hovers, resizes and measures.
+- **The scanner never clicks buttons or links, and never submits forms.** It loads, hovers, resizes and measures.
+- **`--toggle` is the one pass that clicks**: each checkbox and switch is clicked, watched frame by frame for
+  anything cut off, then clicked again to put it back. It is off unless asked for, and refused with `--storage`
+  unless you add `--toggle-signed-in` (a test account or a mocked API only).
 - **Cost**: the browser pass is cheap. Reading screenshots is the expensive part, about 100-180k tokens per
   review agent, so `pick.mjs` keeps about 1.2 images per page instead of 3-4.
 - **Windows Git Bash**: run `export MSYS_NO_PATHCONV=1` first, or arguments like `/pricing` turn into Windows paths.

@@ -58,8 +58,9 @@ something the phone and desktop shots do not), plus 1 in `--sample` clean pages 
 `--key` pages: about 1.2 images per route instead of 3-4. Raise `--sample` for a quick sweep; for a
 release-blocking audit set it to 1 and add `--all-sizes` (every flagged size is opened: the same element can
 break differently at 320). Right-to-left order bugs are mostly seen by eye, so RTL phone shots are sampled densely
-(`--rtl-sample`, default every 2nd page; 1 = all, for an RTL-first app). Contrast ratios, tap sizes and hover
-feedback never trigger a read: the numbers report them fully.
+(`--rtl-sample`, default every 2nd page; 1 = all, for an RTL-first app). Contrast ratios, tap sizes, hover
+feedback, icon sizes, style and colour differences and the checkbox click test never trigger a read: the numbers
+report them fully.
 
 ## What the measurements catch
 
@@ -75,6 +76,10 @@ feedback never trigger a read: the numbers report them fully.
 | brokenImg / small | failed images; tap targets < 44 px on phone |
 | hover (desktop) | no feedback; neighbours move (layout boxes; transforms ignored) |
 | resize (desktop) | the same loaded page shrunk to 768 / 390 / 320, probed + shot at each |
+| misaligned | one item a few px off same-size neighbours in its row or column; an icon not centred on its label |
+| iconSize / sizeMismatch | one icon of a set at another size; controls side by side with different heights |
+| styleMismatch / colourDrift | same tag + class, one with another colour or font; two almost-equal text colours |
+| toggle (`toggle`: true) | each checkbox / switch clicked, watched every frame for a tick, ripple or ring cut by its container, clicked back |
 | page level | error screen, login wall, redirect, uncaught JS errors, skeleton left on, raw i18n keys, 4xx/5xx |
 
 Reviewers catch what numbers cannot: awkward wrapping, RTL order of numbers and dates, contradictory states,
@@ -86,7 +91,8 @@ mixed component styles, untranslated words, placeholder content.
 |---|---|
 | Coverage pass and wide run in the same `out` (the wide run skips those pages) | separate folders (step 3) |
 | Desktop shot taken after the resize pass (it is 320 wide) | the scanner restores the size first; spot-check sizes |
-| Measuring after clicking a main action (the shot shows another page) | the scanner never clicks |
+| Measuring after clicking a main action (the shot shows another page) | the scanner never clicks buttons or links; `toggle` clicks checkboxes only, after the shot |
+| `toggle` on a signed-in production app (a switch saves the moment it is clicked) | public pages, a mocked API or a test account; signed in it needs `toggle-signed-in` |
 | Windows Git Bash turns `/route`, `--key /`, `--crawl-skip` args into paths | `export MSYS_NO_PATHCONV=1`, files as `C:/...` |
 | `read-only` matching the site's own pages blocks its bot check / analytics | match the API host or `/api/` path only |
 | Every page "clean" because each one bounced to the login | read the report's "sent to a sign-in page"; renew `state.json` |

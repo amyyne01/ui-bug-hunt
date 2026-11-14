@@ -20,6 +20,10 @@
  * --vps d,m,x           d 1366x900, l 1024x768, t 768x1024, m 390x844, x 320x700. Default d,m,x
  * --hover               desktop: hover up to --hover-max (25) controls: no feedback / neighbours move
  * --resize              desktop: shrink the SAME loaded page to 768, 390, 320 (no reload), probe + shot each
+ * --toggle              the ONE pass that clicks: each checkbox and switch (up to --toggle-max, 10) is clicked, watched
+ *                       frame by frame for anything cut off by its container (the tick, a ripple, a focus ring), then
+ *                       clicked again to put it back. Radios are never clicked. Refused with --storage unless
+ *                       --toggle-signed-in (a TEST account only; action-looking labels are then skipped)
  * --shots               viewport screenshots into <out>/shots
  * --read-only REGEX     abort every POST/PUT/PATCH/DELETE whose URL matches (scanning production)
  * --storage FILE        Playwright storageState (cookies/localStorage) for signed-in pages
@@ -33,7 +37,7 @@
  * --matrix SPEC         per-locale viewports, e.g. "en:d,m,x;ar:m" (use "-" for no locale); default --locales x --vps
  * --max-routes N       keep N routes spread evenly (a sitemap of 3000 posts); --refresh-routes re-reads a sitemap/crawl
  * --locale-segment S    (with --discover) the folder name of a locale segment besides [locale] / [lang]
- * --no-hover --no-resize --no-shots   turn off what a --config turned on (e.g. the coverage pass)
+ * --no-hover --no-resize --no-shots --no-toggle   turn off what a --config turned on (e.g. the coverage pass)
  * --budget SECONDS      stop starting new pages after this long (a chunk); the same command resumes later
  * --tag NAME            output file name part (default "scan"); resumes: routes already in the JSON are skipped
  * --pw-from DIR         a repo whose node_modules has playwright
@@ -52,8 +56,8 @@ if (!argv.length || argv.includes('--help') || argv.includes('-h')) {   // the f
   process.exit(0);
 }
 // A mistyped flag must stop the run, not be ignored: "--read_only" would scan production with no write protection.
-const VALUE_FLAGS = '--base --routes --sitemap --crawl --crawl-skip --discover --ids --locales --locale-mode --vps --hover-max --read-only --storage --init --wait --error-text --channel --workers --matrix --max-routes --locale-segment --budget --tag --pw-from --config --out'.split(' ');
-const BOOL_FLAGS = '--hover --resize --shots --no-hover --no-resize --no-shots --crawl-signed-in --refresh-routes'.split(' ');
+const VALUE_FLAGS = '--base --routes --sitemap --crawl --crawl-skip --discover --ids --locales --locale-mode --vps --hover-max --toggle-max --read-only --storage --init --wait --error-text --channel --workers --matrix --max-routes --locale-segment --budget --tag --pw-from --config --out'.split(' ');
+const BOOL_FLAGS = '--hover --resize --shots --no-hover --no-resize --no-shots --toggle --no-toggle --toggle-signed-in --crawl-signed-in --refresh-routes'.split(' ');
 const unknown = (name, where) => { console.error(`unknown ${where} "${name}" (node scan.mjs --help lists every flag)`); process.exit(2); };
 for (let i = 0; i < argv.length; i++) { if (VALUE_FLAGS.includes(argv[i])) i++; else if (!BOOL_FLAGS.includes(argv[i])) unknown(argv[i], 'flag'); }
 // --config FILE: the recon's scan-config.json ({"base": ..., "locales": "fr,ar", "hover": true, ...}); flags on the
@@ -91,6 +95,13 @@ const VIEWPORTS = { d: [1366, 900, false], l: [1024, 768, false], t: [768, 1024,
 const DESKTOP_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
 const PHONE_UA = 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36';
 if (!BASE) { console.error('--base is required'); process.exit(2); }
+const ACTIONS = 'log-?out|sign-?out|delete|remove|destroy|unsubscribe|cancel|approve|reject|accept|confirm|archive|restore|publish|unpublish|activate|deactivate|enable|disable|toggle|mark|read-all|reset|revoke|block|ban|refund|void|pay|charge|send|resend|ship|fulfil|clear|empty|duplicate|clone|export|download|impersonate';
+const TOGGLE_MAX = +arg('--toggle-max', 10);
+if (flag('--toggle') && arg('--storage') && !flag('--toggle-signed-in')) {
+  console.error('refusing to click checkboxes signed in: a switch can save a setting the moment it is clicked, and --read-only does not\n'
+    + 'stop every kind of save. Run --toggle on public pages, or (a TEST account only) add --toggle-signed-in.');
+  process.exit(2);
+}
 
 // Next.js routes from the source (app router: app/**/page.*, pages router: pages/**). Any other framework:
 // the recon writes a routes file instead (--routes). Route groups "(x)" and a locale segment are dropped.
@@ -157,6 +168,127 @@ async function hoverPass(page) {
   return { checked: n, noFeedback, layoutShift };
 }
 
+// --toggle: the checkboxes and switches of the page, each marked on the part the user sees and clicks (the input
+// itself, or for a hidden input the small box drawn next to it, else its label).
+const TOGGLE_MARK = `(max, skipSrc) => {
+  const skip = skipSrc ? new RegExp(skipSrc, 'i') : null;
+  const boxLike = (x) => { if (!x) return false; const r = x.getBoundingClientRect(); return r.width >= 8 && r.width <= 90 && r.height >= 8 && r.height <= 60; };
+  const kinds = []; let skipped = 0;
+  for (const e of document.querySelectorAll('input[type=checkbox],[role=checkbox],[role=switch]')) {
+    if (kinds.length >= max) break;
+    if (e.disabled || e.getAttribute('aria-disabled') === 'true' || e.closest('[aria-hidden="true"],[inert],dialog:not([open])') || !(e.checkVisibility?.() ?? true)) continue;
+    const lab = e.closest('label') || (e.id && document.querySelector('label[for="' + CSS.escape(e.id) + '"]')) || null;
+    const text = (e.getAttribute('aria-label') || (lab || e).textContent || '').trim().replace(/\\s+/g, ' ').slice(0, 40);
+    if (skip && skip.test(text)) { skipped++; continue; }
+    const r = e.getBoundingClientRect(), cs = getComputedStyle(e);
+    const drawn = r.width >= 8 && r.height >= 8 && +cs.opacity > 0.1 && cs.clipPath === 'none' && cs.clip === 'auto';
+    const box = drawn ? e : [e.nextElementSibling, e.previousElementSibling].find(boxLike);
+    const v = box || lab;
+    if (!v) continue;
+    const vr = v.getBoundingClientRect();
+    if (vr.width === 0 || vr.height === 0 || vr.top > innerHeight * 3) continue;
+    v.setAttribute('data-uibh-t', kinds.length); e.setAttribute('data-uibh-ti', kinds.length); v.setAttribute('data-uibh-tl', text);
+    kinds.push(box ? 'box' : 'label');
+  }
+  return { kinds, skipped };
+}`;
+// Runs for ms: every frame, how far any part of the control (its own box, children, ::before/::after, outline,
+// hard-edged shadows) sticks out past an ancestor that clips. ponytail: a pseudo-element is placed from its computed
+// left/top/size/transform only when it is absolutely positioned in a positioned parent; others are not measured.
+const TOGGLE_WATCH = `(i, ms) => new Promise((done) => {
+  const v = document.querySelector('[data-uibh-t="' + i + '"]');
+  if (!v) return done(null);
+  const px = (s) => parseFloat(s) || 0;
+  const name = (el) => el.tagName.toLowerCase() + (el.id ? '#' + el.id : '') + (typeof el.className === 'string' && el.className.trim() ? '.' + el.className.trim().split(/\\s+/).slice(0, 2).join('.') : '');
+  const grow = (r, cs) => {
+    let g = cs.outlineStyle !== 'none' ? px(cs.outlineWidth) + Math.max(0, px(cs.outlineOffset)) : 0;
+    for (const m of cs.boxShadow.matchAll(/rgba?\\([^)]*\\)\\s+(-?[\\d.]+)px\\s+(-?[\\d.]+)px\\s+([\\d.]+)px\\s+(-?[\\d.]+)px(\\s+inset)?/g))
+      if (!m[5] && +m[3] === 0) g = Math.max(g, +m[4] + Math.max(Math.abs(+m[1]), Math.abs(+m[2])));
+    return { left: r.left - g, top: r.top - g, right: r.right + g, bottom: r.bottom + g };
+  };
+  const pseudo = (el, which) => {
+    const cs = getComputedStyle(el, which);
+    if (cs.content === 'none' || cs.content === 'normal' || cs.display === 'none' || cs.position !== 'absolute' || getComputedStyle(el).position === 'static') return null;
+    const b = el.getBoundingClientRect();
+    let w = px(cs.width), h = px(cs.height);
+    if (!w || !h) return null;
+    let cx = b.left + el.clientLeft + px(cs.left) + w / 2, cy = b.top + el.clientTop + px(cs.top) + h / 2;
+    const m = cs.transform.match(/matrix\\(([^)]+)\\)/);
+    if (m) { const t = m[1].split(',').map(Number); w *= Math.hypot(t[0], t[1]); h *= Math.hypot(t[2], t[3]); cx += t[4]; cy += t[5]; }
+    return grow({ left: cx - w / 2, top: cy - h / 2, right: cx + w / 2, bottom: cy + h / 2 }, cs);
+  };
+  const over = (r, c) => Math.max(c.left - r.left, r.right - c.right, c.top - r.top, r.bottom - c.bottom, 0);
+  const cut = (r, from, base) => {
+    let worst = Math.max(-r.left, r.right - document.documentElement.clientWidth, 0), by = null;
+    for (let p = from; p && p !== document.documentElement; p = p.parentElement) {
+      const cs = getComputedStyle(p);
+      if (cs.overflowX === 'visible' && cs.overflowY === 'visible') continue;
+      const b = p.getBoundingClientRect();
+      const c = { left: b.left + p.clientLeft, top: b.top + p.clientTop, right: b.left + p.clientLeft + p.clientWidth, bottom: b.top + p.clientTop + p.clientHeight };
+      if (/auto|scroll/.test(cs.overflowX + cs.overflowY) && over(base, c) > 0.5) continue;   // scrolled partly out of a scrolling box: not a crop
+      const o = over(r, c);
+      if (o > worst) { worst = o; by = p; }
+    }
+    return [worst, by];
+  };
+  const measure = () => {
+    const base = v.getBoundingClientRect();
+    const parts = [];
+    for (const el of [v, ...v.querySelectorAll('*')].slice(0, 12)) {
+      parts.push([grow(el.getBoundingClientRect(), getComputedStyle(el)), el.parentElement]);
+      for (const w of ['::before', '::after']) { const r = pseudo(el, w); if (r) parts.push([r, el]); }
+    }
+    let worst = 0, by = null;
+    for (const [r, from] of parts) { if (r.right - r.left <= 0 || r.bottom - r.top <= 0) continue; const [o, p] = cut(r, from, base); if (o > worst) { worst = o; by = p; } }
+    return [worst, by];
+  };
+  const [rest] = measure();
+  let worst = rest, by = measure()[1];
+  const t0 = performance.now();
+  const tick = () => {
+    const [o, p] = measure();
+    if (o > worst) { worst = o; by = p; }
+    if (performance.now() - t0 < ms) return requestAnimationFrame(tick);
+    done({ label: v.getAttribute('data-uibh-tl'), rest: Math.round(rest), worst: Math.round(worst), settled: Math.round(o), by: by ? name(by) : 'the screen edge' });
+  };
+  requestAnimationFrame(tick);
+})`;
+async function togglePass(page) {
+  const out = { checked: 0, skipped: 0, cropped: [], notRestored: [] };
+  const url = page.url();
+  const { kinds, skipped } = await page.evaluate(`(${TOGGLE_MARK})(${TOGGLE_MAX}, ${JSON.stringify(arg('--storage') ? `\\b(${ACTIONS})\\b` : '')})`);
+  out.skipped = skipped;
+  const state = (i) => page.evaluate(`(() => { const e = document.querySelector('[data-uibh-ti="${i}"]'); return e ? String(e.checked ?? e.getAttribute('aria-checked')) : null; })()`);
+  // The box is clicked in its middle; a label only near its left edge (its text may hold links). Clicked only when
+  // that point really is the control (or the invisible input laid over it): never something covering it.
+  const click = async (i) => {
+    const pt = await page.evaluate(`(() => { const v = document.querySelector('[data-uibh-t="${i}"]'), e = document.querySelector('[data-uibh-ti="${i}"]');
+      v.scrollIntoView({ block: 'center', inline: 'nearest' }); const r = v.getBoundingClientRect();
+      const x = ${kinds[i] === 'label' ? 'r.left + Math.min(8, r.width / 2)' : 'r.left + r.width / 2'}, y = r.top + r.height / 2, at = document.elementFromPoint(x, y);
+      return at && !at.closest('a[href]') && (v.contains(at) || at === e || (e.closest('label') || e).contains(at)) ? { x, y } : null; })()`);
+    if (!pt) throw new Error('covered');
+    await page.mouse.click(pt.x, pt.y);
+  };
+  for (let i = 0; i < kinds.length; i++) {
+    try {
+      const before = await state(i);
+      if (before === null) continue;
+      await page.evaluate(`document.querySelector('[data-uibh-t="${i}"]').scrollIntoView({ block: 'center', inline: 'nearest' })`);
+      const watch = page.evaluate(`(${TOGGLE_WATCH})(${i}, 650)`);
+      watch.catch(() => {});
+      await click(i);
+      const w = await watch;
+      if (page.url() !== url) { out.navigated = true; break; }   // the click went somewhere: stop clicking on this page
+      out.checked++;
+      if (w && w.worst > 1) out.cropped.push(`"${w.label}" cut ${w.worst}px by ${w.by}${w.rest > 1 ? ' (already at rest)' : w.settled > 1 ? ' once checked' : ' during the click animation'}`);
+      if (await state(i) === before) continue;   // the click changed nothing: nothing to put back
+      await click(i); await page.waitForTimeout(150);
+      if (await state(i) !== before) out.notRestored.push(`"${w?.label || ''}"`);
+    } catch { /* not clickable (covered, moved): skip it */ }
+  }
+  return out;
+}
+
 const bare = (u) => u.split(/[?#]/)[0].slice(0, 120);   // query strings can carry tokens: never written to the results
 async function visit(browser, job) {
   const [w, h, touch] = VIEWPORTS[job.vp];
@@ -201,6 +333,7 @@ async function visit(browser, job) {
       await page.setViewportSize({ width: w, height: h }); await page.waitForTimeout(700);   // back: the vp's own shot is at its size
     }
     if (flag('--shots')) await page.screenshot({ path: path.join(OUT, 'shots', slug(job)) });
+    if (flag('--toggle') && !rec.errorScreen && !rec.loginWall) rec.toggle = await togglePass(page);   // last: it clicks
   } catch (e) { rec.fatal = String(e).slice(0, 200); }
   rec.blockedWrites = blocked;
   await ctx.close();
@@ -227,7 +360,7 @@ const sameSite = (u) => { try { const x = new URL(u, BASE); return host(x.hostna
 const routeOf = (x) => (x.pathname.slice(basePath.length).replace(/\/+$/, '') || '/') + (x.hash.startsWith('#/') ? x.hash : '');
 // Opening a link can itself DO something in some apps (/orders/42/cancel): action-looking links are never followed
 // by the crawl, and are dropped from a sitemap when the scan is signed in.
-const SKIP = new RegExp(arg('--crawl-skip', String.raw`(log-?out|sign-?out|delete|remove|destroy|unsubscribe|cancel|approve|reject|accept|confirm|archive|restore|publish|unpublish|activate|deactivate|enable|disable|toggle|mark|read-all|reset|revoke|block|ban|refund|void|pay|charge|send|resend|ship|fulfil|clear|empty|duplicate|clone|export|download|impersonate)([-_/.?#]|$)|\.(pdf|zip|png|jpe?g|gif|svg|webp|mp4|xml|csv|json)$`), 'i');
+const SKIP = new RegExp(arg('--crawl-skip', String.raw`(${ACTIONS})([-_/.?#]|$)|\.(pdf|zip|png|jpe?g|gif|svg|webp|mp4|xml|csv|json)$`), 'i');
 async function fromSitemap(url) {
   const seen = new Set(), out = new Set(), queue = [url];
   while (queue.length && seen.size < 50) {
@@ -302,7 +435,7 @@ await Promise.all(Array.from({ length: Math.max(1, WORKERS) }, async () => {
     fs.writeFileSync(outJson, JSON.stringify(rows, null, 1));
     done++;
     const v = rec.visual || {};
-    console.log(`${String(done).padStart(4)}/${jobs.length} ${job.route} [${job.locale || '-'}/${job.vp}] ${rec.fatal ? 'FATAL ' + rec.fatal.slice(0, 60) : ''}${rec.errorScreen ? 'ERROR-SCREEN ' : ''}visual=${v.count ?? '-'}${rec.hover ? ` hover:none=${rec.hover.noFeedback.length} shift=${rec.hover.layoutShift.length}` : ''}`);
+    console.log(`${String(done).padStart(4)}/${jobs.length} ${job.route} [${job.locale || '-'}/${job.vp}] ${rec.fatal ? 'FATAL ' + rec.fatal.slice(0, 60) : ''}${rec.errorScreen ? 'ERROR-SCREEN ' : ''}visual=${v.count ?? '-'}${rec.hover ? ` hover:none=${rec.hover.noFeedback.length} shift=${rec.hover.layoutShift.length}` : ''}${rec.toggle ? ` toggle:cut=${rec.toggle.cropped.length}/${rec.toggle.checked}` : ''}`);
   }
 }));
 await browser.close();

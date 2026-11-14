@@ -46,7 +46,7 @@ function loadRows(inputs) {
 }
 const rows = loadRows(inputs);
 if (!rows.length) { console.error('no scan rows found in ' + inputs.join(', ')); process.exit(2); }
-const VISUAL = ['overflow', 'coveredAtEnd', 'unitSplit', 'overlapControls', 'offscreen', 'fixedOverlap', 'bigDialog', 'clipped', 'brokenImg', 'lowContrast', 'squeezed'];
+const VISUAL = ['overflow', 'coveredAtEnd', 'unitSplit', 'overlapControls', 'offscreen', 'fixedOverlap', 'bigDialog', 'clipped', 'brokenImg', 'lowContrast', 'squeezed', 'misaligned', 'sizeMismatch'];
 // Fully measured, never worth an image read: contrast (a ratio), tap sizes, hover feedback.
 const READ = VISUAL.filter((k) => k !== 'lowContrast');
 const hints = (v) => READ.flatMap((k) => (v?.[k] || []).slice(0, 2).map((x) => `${k}: ${x.slice(0, 110)}`));
