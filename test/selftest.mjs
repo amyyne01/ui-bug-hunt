@@ -101,6 +101,7 @@ const PAGES = {
   // menus: one fine, one opening off the screen, one cut by its container, one under another layer, and a <details>;
   // first a drawer that covers its own button and ignores Escape: the page is reloaded and the rest still tested
   '/menus': [page(`<button class="mb" type="button" aria-expanded="false" onclick="this.setAttribute('aria-expanded','true');document.getElementById('drawer').hidden=false">Drawer</button><div id="drawer" hidden style="position:fixed;inset:0 50% 0 0;z-index:9;background:#fff">A drawer that Escape does not close</div>
+<button class="mb" type="button" aria-haspopup="dialog" onclick="document.getElementById('dlg').hidden=false">Dialog</button><div id="dlg" role="dialog" aria-label="Stuck" hidden style="position:fixed;inset:0;z-index:9;background:#fff">A dialog with no way out</div>
 <div>${menu('m-good', 'Good')}</div><div>${menu('m-off', 'Off', 'off')}</div><div class="clipbox">${menu('m-cut', 'Clipped')}</div>
 <div style="position:relative">${menu('m-cov', 'Covered')}<div class="cover">A guide card</div></div><div style="height:140px"></div>
 <details><summary>More</summary><p>Details text.</p></details>${MENU_JS}`,
@@ -160,7 +161,7 @@ for (const [route, [, kind]] of Object.entries(PAGES)) {
     check(!d.visual?.clipped?.length && d.stretch?.broke.some((s) => s.startsWith('clipped') && s.includes('div.tab')), '/stretch: a tab that is fine today and cuts a longer label');
   } else if (kind === 'menus') {
     const b = d.menus?.broken || [];
-    check(d.menus?.opened === 5 && d.menus.notClosed.length === 1 && d.menus.notClosed[0].includes('Drawer') && !b.some((s) => s.includes('"Good"') || s.includes('"More"')), `/menus: ${d.menus?.opened} popups opened and closed after a drawer that would not close, the good ones not flagged`);
+    check(d.menus?.opened === 6 && d.menus.notClosed.length === 2 && d.menus.notClosed[0].includes('Drawer') && d.menus.notClosed[1].includes('Dialog') && !b.some((s) => s.includes('"Good"') || s.includes('"More"')), `/menus: ${d.menus?.opened} popups opened, a drawer and a dialog that would not close are listed and the rest still tested, the good ones not flagged`);
     check(b.some((s) => s.includes('"Off"') && s.includes('off the screen')), '/menus: a menu that opens off the screen');
     check(b.some((s) => s.includes('"Clipped"') && s.includes('cut ') && s.includes('clipbox')), '/menus: a menu cut by its container');
     check(b.some((s) => s.includes('"Covered"') && s.includes('covered by div.cover')), '/menus: a menu under another layer');

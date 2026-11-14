@@ -416,9 +416,10 @@ const MENU_MARK = `(max, skipSrc) => {
 }`;
 const MENU_CAND = '[role=menu],[role=listbox],[role=dialog],dialog[open],[popover],[data-radix-popper-content-wrapper] > *';
 // Before the click: scroll the button to the middle, remember what is already open, return where to click (null = covered).
-const MENU_AIM = `(i) => { const e = document.querySelector('[data-uibh-m="' + i + '"]'); if (!e) return null;
+// snap is false on the retry: the popup this click opened must still count as new.
+const MENU_AIM = `(i, snap) => { const e = document.querySelector('[data-uibh-m="' + i + '"]'); if (!e) return null;
   e.scrollIntoView({ block: 'center', inline: 'nearest' });
-  window.__uibhPop = new Set([...document.querySelectorAll('${MENU_CAND}')].filter((x) => (x.checkVisibility?.() ?? true) && x.getBoundingClientRect().width > 0));
+  if (snap) window.__uibhPop = new Set([...document.querySelectorAll('${MENU_CAND}')].filter((x) => (x.checkVisibility?.() ?? true) && x.getBoundingClientRect().width > 0));
   const r = e.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2, at = document.elementFromPoint(x, y);
   return at && e.contains(at) ? { x, y } : null; }`;
 const MENU_FIND = `const e = document.querySelector('[data-uibh-m="' + i + '"]');
@@ -452,7 +453,7 @@ async function menuPass(page) {
   out.skipped = skipped;
   for (let i = 0; i < n; i++) {
     try {
-      const pt = await page.evaluate(`(${MENU_AIM})(${i})`);
+      const pt = await page.evaluate(`(${MENU_AIM})(${i}, true)`);
       if (!pt) { out.unclickable++; continue; }
       await page.mouse.click(pt.x, pt.y);
       await page.waitForTimeout(450);   // the open animation: judging earlier reads a menu mid-flight as cut or invisible
@@ -461,7 +462,7 @@ async function menuPass(page) {
       if (!m) continue;
       if (m.pop) { out.opened++; for (const p of m.problems) out.broken.push(`${m.label}: its popup ${p}`); } else out.noPopup++;
       await page.keyboard.press('Escape'); await page.waitForTimeout(200);
-      if (await page.evaluate(`(${MENU_OPEN})(${i})`)) { const again = await page.evaluate(`(${MENU_AIM})(${i})`); if (again) { await page.mouse.click(again.x, again.y); await page.waitForTimeout(250); } }
+      if (await page.evaluate(`(${MENU_OPEN})(${i})`)) { const again = await page.evaluate(`(${MENU_AIM})(${i}, false)`); if (again) { await page.mouse.click(again.x, again.y); await page.waitForTimeout(250); } }
       if (page.url() !== url) { out.navigated = true; await page.goto(url, { waitUntil: 'domcontentloaded' }); await page.waitForTimeout(WAIT); break; }
       if (await page.evaluate(`(${MENU_OPEN})(${i})`)) {   // left open (a drawer that ignores Escape): every later measurement would be wrong, so start the page again
         out.notClosed.push(m.label);

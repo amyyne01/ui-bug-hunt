@@ -137,7 +137,7 @@ node <scripts>/report.mjs ui-hunt/report.md ui-hunt/scan
 resumes it.
 
 After fixing, scan again into a new folder and add `--baseline ui-hunt/scan` to the report command: it then
-opens with what is fixed, what is new and what is still there.
+opens with what is fixed, what is new and what is still there. Use the same version and flags for both scans.
 
 ## Test
 

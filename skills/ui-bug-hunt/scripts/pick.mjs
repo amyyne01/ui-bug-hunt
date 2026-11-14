@@ -15,7 +15,8 @@
  *   320 (_x)                if the 320 view was flagged with something the files above do not already show
  *   _d_resized768 / 390     if the live resize flagged that width, same rule
  *   --all-sizes             open every flagged size anyway (the same element can break differently at 320)
- * Contrast ratios, tap-target sizes and "no hover feedback" never trigger a read: the numbers report them fully.
+ * Contrast ratios, tap-target sizes, "no hover feedback", icon sizes, style and colour differences, scroll cues, RTL
+ * alignment, keyboard hints and the focus / checkbox / menu passes never trigger a read: the numbers report them fully.
  * Writes <out>/batch-<n>.md (file list + what the probe saw on each file) and <out>/picked.json.
  */
 import fs from 'node:fs';

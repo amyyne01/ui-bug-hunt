@@ -42,7 +42,8 @@ none it falls back to Playwright's Chromium (`npx playwright install chromium`; 
 5. **Wide run in chunks**: the config's `budget` (seconds) ends a chunk; the same command resumes. Matrix: main
    locale desktop (hover + resize) + phone 390 + 320, RTL locale phone 390. Low RAM: `workers` 2, one scan at a time.
    A site with a dark theme: the same command again with `--dark --out <OUT>/scan-dark` (a theme switched by a
-   class or localStorage: an `init` script instead), then pass both folders to `report.mjs`.
+   class or localStorage: an `init` script instead), then pass both folders to `report.mjs` (its rows are marked `/dark`). The dark scan is measured only: run
+   `pick.mjs` on the light folder.
 6. **Pick, then review.** `node <SKILL>/scripts/pick.mjs --shots <OUT>/scan/shots [--main <loc>] [--rtl <loc>] --out <OUT>/review <OUT>/scan`,
    then one Sonnet-tier agent per `batch-N.md`, at most 2 at a time, brief = `review-brief.md`. Each brief lists
    what earlier batches found ("already known") and the recon's by-design elements.
@@ -54,7 +55,8 @@ none it falls back to Playwright's Chromium (`npx playwright install chromium`; 
 
 9. **After the fixes**: scan again into a NEW folder (`--out <OUT>/scan2`), then
    `report.mjs <OUT>/report2.md <OUT>/scan2 --baseline <OUT>/scan`: the report opens with what is fixed, what is new
-   and what is still there. Review only the screenshots of new findings.
+   and what is still there. Review only the screenshots of new findings. Both scans must come from the same
+   skill version and flags: a check the first scan did not run shows up as "new".
 
 ## Cost
 
