@@ -69,6 +69,7 @@ Write: `{"pwFrom": "" (empty = the skill's own install), "chrome": true, "outIgn
   `init`: `<OUT>/init.js` when run.initScript is set.
 - `pw-from`: tools.pwFrom when not empty; `channel`: `"chrome"` if tools.chrome else `"chromium"`.
 - `out`: `<OUT>/scan`, `hover`/`resize`/`focus`/`shots`: true, `budget`: 600, `workers`: 2 (1 if ramGb < 8).
+- `stretch`: true when the app has 2+ locales or shows user-written names and titles (the longer-text test).
 - `toggle`: true (the checkbox click test) when no sign-in is needed. Signed in: only against a mocked API or a
   test account, with `toggle-signed-in`: true too; on production with real data leave both out and say so.
 - If tools.outIgnored is false: add `<OUT>/` to the project's `.gitignore` (tell the user).

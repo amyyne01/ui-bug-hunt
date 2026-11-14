@@ -26,6 +26,8 @@
  *                       frame by frame for anything cut off by its container (the tick, a ripple, a focus ring), then
  *                       clicked again to put it back. Radios are never clicked. Refused with --storage unless
  *                       --toggle-signed-in (a TEST account only; action-looking labels are then skipped)
+ * --stretch             every short label made 40% longer (a translation, a long name), measured again: what newly
+ *                       overflows, clips, leaves the screen or overlaps is reported as "breaks with longer text"
  * --shots               viewport screenshots into <out>/shots
  * --read-only REGEX     abort every POST/PUT/PATCH/DELETE whose URL matches (scanning production)
  * --storage FILE        Playwright storageState (cookies/localStorage) for signed-in pages
@@ -39,7 +41,7 @@
  * --matrix SPEC         per-locale viewports, e.g. "en:d,m,x;ar:m" (use "-" for no locale); default --locales x --vps
  * --max-routes N       keep N routes spread evenly (a sitemap of 3000 posts); --refresh-routes re-reads a sitemap/crawl
  * --locale-segment S    (with --discover) the folder name of a locale segment besides [locale] / [lang]
- * --no-hover --no-resize --no-shots --no-focus --no-toggle   turn off what a --config turned on (e.g. the coverage pass)
+ * --no-hover --no-resize --no-shots --no-focus --no-stretch --no-toggle   turn off what a --config turned on (e.g. the coverage pass)
  * --budget SECONDS      stop starting new pages after this long (a chunk); the same command resumes later
  * --tag NAME            output file name part (default "scan"); resumes: routes already in the JSON are skipped
  * --pw-from DIR         a repo whose node_modules has playwright
@@ -59,7 +61,7 @@ if (!argv.length || argv.includes('--help') || argv.includes('-h')) {   // the f
 }
 // A mistyped flag must stop the run, not be ignored: "--read_only" would scan production with no write protection.
 const VALUE_FLAGS = '--base --routes --sitemap --crawl --crawl-skip --discover --ids --locales --locale-mode --vps --hover-max --toggle-max --focus-max --read-only --storage --init --wait --error-text --channel --workers --matrix --max-routes --locale-segment --budget --tag --pw-from --config --out'.split(' ');
-const BOOL_FLAGS = '--hover --resize --shots --no-hover --no-resize --no-shots --focus --no-focus --toggle --no-toggle --toggle-signed-in --crawl-signed-in --refresh-routes'.split(' ');
+const BOOL_FLAGS = '--hover --resize --shots --no-hover --no-resize --no-shots --focus --no-focus --stretch --no-stretch --toggle --no-toggle --toggle-signed-in --crawl-signed-in --refresh-routes'.split(' ');
 const unknown = (name, where) => { console.error(`unknown ${where} "${name}" (node scan.mjs --help lists every flag)`); process.exit(2); };
 for (let i = 0; i < argv.length; i++) { if (VALUE_FLAGS.includes(argv[i])) i++; else if (!BOOL_FLAGS.includes(argv[i])) unknown(argv[i], 'flag'); }
 // --config FILE: the recon's scan-config.json ({"base": ..., "locales": "fr,ar", "hover": true, ...}); flags on the
@@ -252,6 +254,29 @@ async function focusPass(page) {
   return out;
 }
 
+// --stretch: make every short label 40% longer (what a translation or a long name does), measure again, and keep
+// only what broke because of it. Numbers and running text are left alone. The page is not put back: this runs last.
+const STRETCH = `(() => { let n = 0;
+  const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT), nodes = [];
+  for (let t = w.nextNode(); t; t = w.nextNode()) nodes.push(t);
+  for (const t of nodes) {
+    const s = t.textContent.trim(), p = t.parentElement;
+    if (s.length < 3 || s.length > 60 || /\\d/.test(s) || !p || p.closest('script,style,noscript,textarea,svg,code,pre,[contenteditable]') || !(p.checkVisibility?.() ?? true)) continue;
+    t.textContent = t.textContent.replace(s, s + s.slice(0, Math.ceil(s.length * 0.4))); n++;
+  }
+  return n; })()`;
+async function stretchPass(page, touch) {
+  const kinds = ['overflow', 'clipped', 'offscreen', 'overlapControls'];
+  const same = (x) => x.replace(/"[^"]*"/g, '').replace(/\d+/g, '#');   // the label and the pixel numbers change with the text
+  const before = await page.evaluate(`(${PROBE})(${touch})`);
+  const texts = await page.evaluate(STRETCH);
+  await page.waitForTimeout(300);
+  const after = await page.evaluate(`(${PROBE})(${touch})`);
+  const broke = [];
+  for (const k of kinds) { const had = new Set((before[k] || []).map(same)); for (const x of after[k] || []) if (!had.has(same(x))) broke.push(`${k}: ${x}`); }
+  return { texts, broke: broke.slice(0, 10) };
+}
+
 // --toggle: the checkboxes and switches of the page, each marked on the part the user sees and clicks (the input
 // itself, or for a hidden input the small box drawn next to it, else its label).
 const TOGGLE_MARK = `(max, skipSrc) => {
@@ -397,7 +422,8 @@ async function visit(browser, job) {
     }
     if (flag('--shots')) await page.screenshot({ path: path.join(OUT, 'shots', slug(job)) });
     if (!touch && flag('--focus') && !rec.errorScreen && !rec.loginWall) rec.focus = await focusPass(page);
-    if (flag('--toggle') && !rec.errorScreen && !rec.loginWall) rec.toggle = await togglePass(page);   // last: it clicks
+    if (flag('--toggle') && !rec.errorScreen && !rec.loginWall) rec.toggle = await togglePass(page);   // after the shot: it clicks
+    if (flag('--stretch') && !rec.errorScreen && !rec.loginWall) rec.stretch = await stretchPass(page, touch);   // last: it rewrites the page's text
   } catch (e) { rec.fatal = String(e).slice(0, 200); }
   rec.blockedWrites = blocked;
   await ctx.close();
@@ -499,7 +525,7 @@ await Promise.all(Array.from({ length: Math.max(1, WORKERS) }, async () => {
     fs.writeFileSync(outJson, JSON.stringify(rows, null, 1));
     done++;
     const v = rec.visual || {};
-    console.log(`${String(done).padStart(4)}/${jobs.length} ${job.route} [${job.locale || '-'}/${job.vp}] ${rec.fatal ? 'FATAL ' + rec.fatal.slice(0, 60) : ''}${rec.errorScreen ? 'ERROR-SCREEN ' : ''}visual=${v.count ?? '-'}${rec.hover ? ` hover:none=${rec.hover.noFeedback.length} shift=${rec.hover.layoutShift.length}` : ''}${rec.focus ? ` focus:none=${rec.focus.noIndicator.length} cut=${rec.focus.cropped.length} hidden=${rec.focus.hidden.length}` : ''}${rec.toggle ? ` toggle:cut=${rec.toggle.cropped.length}/${rec.toggle.checked}` : ''}`);
+    console.log(`${String(done).padStart(4)}/${jobs.length} ${job.route} [${job.locale || '-'}/${job.vp}] ${rec.fatal ? 'FATAL ' + rec.fatal.slice(0, 60) : ''}${rec.errorScreen ? 'ERROR-SCREEN ' : ''}visual=${v.count ?? '-'}${rec.hover ? ` hover:none=${rec.hover.noFeedback.length} shift=${rec.hover.layoutShift.length}` : ''}${rec.focus ? ` focus:none=${rec.focus.noIndicator.length} cut=${rec.focus.cropped.length} hidden=${rec.focus.hidden.length}` : ''}${rec.toggle ? ` toggle:cut=${rec.toggle.cropped.length}/${rec.toggle.checked}` : ''}${rec.stretch ? ` stretch:broke=${rec.stretch.broke.length}` : ''}`);
   }
 }));
 await browser.close();

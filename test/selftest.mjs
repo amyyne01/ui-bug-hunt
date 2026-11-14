@@ -62,6 +62,8 @@ const PAGES = {
   // keyboard focus: a link with no indicator, a ring cut by its wrapper, a link in an off-screen menu
   '/focus': [page('<a class="btn" href="/">Normal</a> <a class="plain" href="/">Plain</a><div class="wrap"><a class="ring" href="/">Ring</a></div><div class="menu"><a href="/">Hidden menu link</a></div>',
     '.plain{display:inline-block;min-height:44px;line-height:44px;color:#111;outline:none}.wrap{overflow:hidden;width:120px;margin-top:16px}.ring{display:block;min-height:44px;line-height:44px;color:#111}.ring:focus-visible{outline:3px solid #1a4fd6;outline-offset:2px}.menu{position:absolute;left:-400px;top:0}'), 'focus'],
+  // a tab that fits its label today and cuts it once the label is 40% longer
+  '/stretch': [page('<div class="tab">Notifications</div>', '.tab{width:112px;white-space:nowrap;overflow:hidden;background:#eee}'), 'stretch'],
   '/misaligned': [page(`<div class="r"><a class="it" href="/">One</a><a class="it" href="/">Two</a><a class="it" href="/" style="position:relative;top:5px">Three</a><a class="it" href="/">Four</a></div>
 <a class="lk" href="/">${icon(16, 'style="position:relative;top:-8px"')}<span>Settings</span></a>`,
   '.r{display:flex;gap:8px}.it{display:block;width:90px;height:44px;line-height:44px;text-align:center;background:#eee;color:#111;text-decoration:none}.it:hover{background:#ddd}.lk{display:inline-flex;align-items:center;gap:8px;min-height:44px;margin-top:20px;color:#111}'), 'misaligned'],
@@ -106,7 +108,7 @@ const extra = process.argv.slice(2);   // e.g. --channel chromium
 check((await run('scan.mjs', ['--base', BASE, '--routes', routes, '--read_only', 'x'])).status === 2, 'a mistyped flag is refused');
 
 // 2. the scan
-const scan = await run('scan.mjs', ['--base', BASE, '--routes', routes, '--matrix', '-:d,m', '--hover', '--resize', '--shots', '--focus', '--toggle',
+const scan = await run('scan.mjs', ['--base', BASE, '--routes', routes, '--matrix', '-:d,m', '--hover', '--resize', '--shots', '--focus', '--toggle', '--stretch',
   '--read-only', '/api/', '--wait', '400', '--workers', '1', '--out', scanDir, ...extra]);
 process.stdout.write(scan.stdout.split(/\r?\n/).slice(-4).join('\n') + scan.stderr);
 check(scan.status === 0 && /all page loads done/.test(scan.stdout), 'scan ran to the end');
@@ -119,6 +121,9 @@ for (const [route, [, kind]] of Object.entries(PAGES)) {
       && Object.values(d.resize || {}).every((v) => v.count === 0), `${route} is clean at every size`);
     if (route === '/app') check(d.toggle?.checked === 2 && !d.toggle.cropped.length && !d.toggle.notRestored.length && m.toggle?.checked === 2 && !m.toggle.cropped.length, '/app: both checkboxes clicked, none cut, both put back');
     if (route === '/app') check(d.focus?.checked >= 8 && !d.focus.noIndicator.length && !d.focus.cropped.length && !d.focus.hidden.length, `/app: ${d.focus?.checked} controls reached with Tab, every focus ring visible and whole`);
+    if (route === '/app') check(d.stretch?.texts > 15 && !d.stretch.broke.length && !m.stretch?.broke.length, `/app: ${d.stretch?.texts} labels made longer, nothing breaks`);
+  } else if (kind === 'stretch') {
+    check(!d.visual?.clipped?.length && d.stretch?.broke.some((s) => s.startsWith('clipped') && s.includes('div.tab')), '/stretch: a tab that is fine today and cuts a longer label');
   } else if (kind === 'focus') {
     check(d.focus?.noIndicator.some((s) => s.includes('Plain')) && !d.focus.noIndicator.some((s) => s.includes('Normal') || s.includes('Ring')), '/focus: a link with no focus indicator (and only that one)');
     check(d.focus?.cropped.some((s) => s.includes('Ring') && s.includes('cut 5px')), '/focus: a focus ring cut by its wrapper');
@@ -174,7 +179,7 @@ check(all.status === 0 && fs.readFileSync(path.join(OUT, 'review-all', 'batch-1.
 const md = path.join(OUT, 'report.md');
 const rep = await run('report.mjs', [md, scanDir]);
 const text = fs.existsSync(md) ? fs.readFileSync(md, 'utf8') : '';
-check(rep.status === 0 && ['## overflow', '## clipped', '## lowContrast', '## unitSplit', '## coveredAtEnd', '## hoverShift', '## small', '## toggleCrop', '## focusNone', '## focusCrop', '## focusHidden', '## misaligned', '## iconSize', '## sizeMismatch', '## styleMismatch', '## colourDrift', '## sent to a sign-in page', '## error screen', '## untranslated keys']
+check(rep.status === 0 && ['## overflow', '## clipped', '## lowContrast', '## unitSplit', '## coveredAtEnd', '## hoverShift', '## small', '## toggleCrop', '## stretch', '## focusNone', '## focusCrop', '## focusHidden', '## misaligned', '## iconSize', '## sizeMismatch', '## styleMismatch', '## colourDrift', '## sent to a sign-in page', '## error screen', '## untranslated keys']
   .every((h) => text.includes(h)), 'report has a section for each kind');
 
 server.close();
