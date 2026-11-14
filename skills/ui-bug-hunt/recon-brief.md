@@ -70,6 +70,11 @@ Write: `{"pwFrom": "" (empty = the skill's own install), "chrome": true, "outIgn
 - `pw-from`: tools.pwFrom when not empty; `channel`: `"chrome"` if tools.chrome else `"chromium"`.
 - `out`: `<OUT>/scan`, `hover`/`resize`/`focus`/`shots`: true, `budget`: 600, `workers`: 2 (1 if ramGb < 8).
 - `stretch`: true when the app has 2+ locales or shows user-written names and titles (the longer-text test).
+- `menus`: true (the menu test: opens each menu button, never a menu item) under the same rule as `toggle` below,
+  with `menus-signed-in` in place of `toggle-signed-in`.
+- `placeholder-text`: only if the app is not in English: `coming soon|lorem ipsum|under construction` plus the
+  same words in the app's languages, joined with `|`.
+- A dark theme (the routes or run agent mentions one): plan a second run with `--dark --out <OUT>/scan-dark`.
 - `toggle`: true (the checkbox click test) when no sign-in is needed. Signed in: only against a mocked API or a
   test account, with `toggle-signed-in`: true too; on production with real data leave both out and say so.
 - If tools.outIgnored is false: add `<OUT>/` to the project's `.gitignore` (tell the user).

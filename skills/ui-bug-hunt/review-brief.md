@@ -17,7 +17,13 @@ screen edge; light-on-light or dark-on-dark text; empty or broken image boxes; s
 buttons covering a button, input or amount; layouts breaking at 320/390/768; right-to-left problems (arrows not
 mirrored, a number split from its unit or in the wrong order, scrambled dates, wrong alignment); raw keys like
 `orders.title` or words in another language than the page; inconsistent styles for the same component;
-contradictory states (a label says off, the toggle shows on); placeholder or "coming soon" content.
+contradictory states (a label says off, the toggle shows on; "nothing to fix" beside "6 warnings"; "no changes"
+beside an enabled save button); placeholder or "coming soon" content; the same currency with different decimals
+("743" beside "646,500"), a dot decimal in one place and a comma in another, unit words of another language
+("MB" on a French page); a red, destructive look on a harmless action (publish, pause, send); a dialog whose
+buttons belong to another dialog; enum slugs or Title Case left raw; a sheet or picker with no title or close
+button; a centred element pushed off-centre by a long label; in RTL, a phone, date, @handle, #id or email
+scrambled inside a sentence.
 House rules to check too: <tools.rules from the recon, e.g. currency formats, imagery rules>.
 
 ALREADY KNOWN (do not report again): <findings from earlier batches, one line each>.

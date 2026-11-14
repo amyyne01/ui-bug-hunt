@@ -21,8 +21,17 @@
  * --hover               desktop: hover up to --hover-max (25) controls: no feedback / neighbours move
  * --resize              desktop: shrink the SAME loaded page to 768, 390, 320 (no reload), probe + shot each
  * --focus               desktop: press Tab up to --focus-max (25) times (keys only): a control with no visible focus
- *                       indicator, a focus ring cut off by its container, focus landing on something invisible
- * --toggle              the ONE pass that clicks: each checkbox and switch (up to --toggle-max, 10) is clicked, watched
+ *                       indicator, a focus ring cut off by its container, focus landing on something invisible.
+ *                       At every size: a focused field left under a fixed bar (a sticky save bar, a bottom nav)
+ * --menus               the second pass that clicks: each menu button (aria-haspopup, aria-expanded="false", <summary>;
+ *                       up to --menus-max, 8) is opened, its popup measured (off the screen, cut by a container,
+ *                       covered by another layer), then closed with Escape. Menu items are never clicked. Refused
+ *                       with --storage unless --menus-signed-in (a TEST account; action-looking labels are skipped)
+ * --dark                scan with the dark colour scheme (prefers-color-scheme: dark); give it its own --out. A theme
+ *                       switched by a class or localStorage needs --init instead
+ * --placeholder-text REGEX   text that should not ship (default: coming soon, lorem ipsum, under construction);
+ *                       the recon adds the app's own languages
+ * --toggle              a pass that clicks: each checkbox and switch (up to --toggle-max, 10) is clicked, watched
  *                       frame by frame for anything cut off by its container (the tick, a ripple, a focus ring), then
  *                       clicked again to put it back. Radios are never clicked. Refused with --storage unless
  *                       --toggle-signed-in (a TEST account only; action-looking labels are then skipped)
@@ -41,7 +50,7 @@
  * --matrix SPEC         per-locale viewports, e.g. "en:d,m,x;ar:m" (use "-" for no locale); default --locales x --vps
  * --max-routes N       keep N routes spread evenly (a sitemap of 3000 posts); --refresh-routes re-reads a sitemap/crawl
  * --locale-segment S    (with --discover) the folder name of a locale segment besides [locale] / [lang]
- * --no-hover --no-resize --no-shots --no-focus --no-stretch --no-toggle   turn off what a --config turned on (e.g. the coverage pass)
+ * --no-hover --no-resize --no-shots --no-focus --no-stretch --no-toggle --no-menus   turn off what a --config turned on (e.g. the coverage pass)
  * --budget SECONDS      stop starting new pages after this long (a chunk); the same command resumes later
  * --tag NAME            output file name part (default "scan"); resumes: routes already in the JSON are skipped
  * --pw-from DIR         a repo whose node_modules has playwright
@@ -60,8 +69,8 @@ if (!argv.length || argv.includes('--help') || argv.includes('-h')) {   // the f
   process.exit(0);
 }
 // A mistyped flag must stop the run, not be ignored: "--read_only" would scan production with no write protection.
-const VALUE_FLAGS = '--base --routes --sitemap --crawl --crawl-skip --discover --ids --locales --locale-mode --vps --hover-max --toggle-max --focus-max --read-only --storage --init --wait --error-text --channel --workers --matrix --max-routes --locale-segment --budget --tag --pw-from --config --out'.split(' ');
-const BOOL_FLAGS = '--hover --resize --shots --no-hover --no-resize --no-shots --focus --no-focus --stretch --no-stretch --toggle --no-toggle --toggle-signed-in --crawl-signed-in --refresh-routes'.split(' ');
+const VALUE_FLAGS = '--base --routes --sitemap --crawl --crawl-skip --discover --ids --locales --locale-mode --vps --hover-max --toggle-max --focus-max --menus-max --placeholder-text --read-only --storage --init --wait --error-text --channel --workers --matrix --max-routes --locale-segment --budget --tag --pw-from --config --out'.split(' ');
+const BOOL_FLAGS = '--hover --resize --shots --no-hover --no-resize --no-shots --focus --no-focus --stretch --no-stretch --toggle --no-toggle --toggle-signed-in --menus --no-menus --menus-signed-in --dark --crawl-signed-in --refresh-routes'.split(' ');
 const unknown = (name, where) => { console.error(`unknown ${where} "${name}" (node scan.mjs --help lists every flag)`); process.exit(2); };
 for (let i = 0; i < argv.length; i++) { if (VALUE_FLAGS.includes(argv[i])) i++; else if (!BOOL_FLAGS.includes(argv[i])) unknown(argv[i], 'flag'); }
 // --config FILE: the recon's scan-config.json ({"base": ..., "locales": "fr,ar", "hover": true, ...}); flags on the
@@ -106,6 +115,13 @@ if (flag('--toggle') && arg('--storage') && !flag('--toggle-signed-in')) {
     + 'stop every kind of save. Run --toggle on public pages, or (a TEST account only) add --toggle-signed-in.');
   process.exit(2);
 }
+const MENUS_MAX = +arg('--menus-max', 8);
+if (flag('--menus') && arg('--storage') && !flag('--menus-signed-in')) {
+  console.error('refusing to open menus signed in: the scanner would be clicking inside a real account. Run --menus on public pages,\n'
+    + 'or (a TEST account only) add --menus-signed-in.');
+  process.exit(2);
+}
+const PLACEHOLDER_TEXT = new RegExp(arg('--placeholder-text', 'coming soon|lorem ipsum|under construction'), 'i');
 
 // Next.js routes from the source (app router: app/**/page.*, pages router: pages/**). Any other framework:
 // the recon writes a routes file instead (--routes). Route groups "(x)" and a locale segment are dropped.
@@ -226,6 +242,12 @@ const FOCUS_STEP = `(() => {
   const r = v.getBoundingClientRect(), cs = getComputedStyle(v);
   const shown = (v.checkVisibility?.({ checkOpacity: true, checkVisibilityCSS: true }) ?? true) && r.width > 1 && r.height > 1 && r.right > 0 && r.left < innerWidth && r.bottom > 0 && r.top < innerHeight;
   if (!shown) { res.hidden = res.key; return res; }
+  // the browser scrolled the focused control into view, and it is still under a fixed bar (a sticky save bar, a bottom nav)
+  const at = v.getRootNode() === document ? document.elementFromPoint((Math.max(r.left, 0) + Math.min(r.right, innerWidth)) / 2, (Math.max(r.top, 0) + Math.min(r.bottom, innerHeight)) / 2) : null;
+  if (at && !v.contains(at) && !at.contains(v) && !(lab && lab.contains(at))) {
+    let f = at; while (f && !/fixed|sticky/.test(getComputedStyle(f).position)) f = f.parentElement;
+    if (f && !f.contains(v)) res.covered = res.key + ' is under ' + name(f);
+  }
   const [o, by] = cut(grow(r, cs), v.parentElement, r);
   // only a ring cut around a control that is itself whole: one already half out of its box (a carousel, the screen edge) is not a ring bug
   const whole = by && cut(r, v.parentElement, r)[0] <= 0.5;   // by null = the screen edge: a full-width control always touches it
@@ -233,8 +255,8 @@ const FOCUS_STEP = `(() => {
   window.__uibhFocus = { els, label: res.key, look: looks(els) };
   return res;
 })()`;
-async function focusPass(page) {
-  const out = { checked: 0, noIndicator: [], cropped: [], hidden: [] };
+async function focusPass(page, touch) {
+  const out = { checked: 0, noIndicator: [], cropped: [], hidden: [], covered: [] };
   const seen = new Set();
   await page.evaluate('window.scrollTo(0, 0); document.activeElement?.blur?.(); window.__uibhFocus = null;');
   for (let i = 0; i <= FOCUS_MAX; i++) {
@@ -245,12 +267,13 @@ async function focusPass(page) {
     if (s.none) out.noIndicator.push(s.none);
     if (s.hidden) out.hidden.push(s.hidden);
     if (s.crop) out.cropped.push(s.crop);
+    if (s.covered) out.covered.push(s.covered);
     if (!s.key) { if (i > 0) break; continue; }   // focus left the page
     if (seen.has(s.key) && i < FOCUS_MAX) { await page.evaluate('document.activeElement?.blur?.()'); const last = await page.evaluate(FOCUS_STEP).catch(() => null); if (last?.none) out.noIndicator.push(last.none); break; }   // went round
     seen.add(s.key); out.checked++;
   }
   await page.evaluate('document.activeElement?.blur?.(); window.scrollTo(0, 0);').catch(() => {});
-  for (const k of ['noIndicator', 'cropped', 'hidden']) out[k] = [...new Set(out[k])].slice(0, 12);
+  for (const k of ['noIndicator', 'cropped', 'hidden', 'covered']) out[k] = touch && k !== 'covered' ? [] : [...new Set(out[k])].slice(0, 12);   // a phone has no Tab key: only the covered field counts there
   return out;
 }
 
@@ -266,7 +289,7 @@ const STRETCH = `(() => { let n = 0;
   }
   return n; })()`;
 async function stretchPass(page, touch) {
-  const kinds = ['overflow', 'clipped', 'offscreen', 'overlapControls'];
+  const kinds = ['overflow', 'clipped', 'offscreen', 'overlapControls', 'textSpill', 'wordBroken'];
   const same = (x) => x.replace(/"[^"]*"/g, '').replace(/\d+/g, '#');   // the label and the pixel numbers change with the text
   const before = await page.evaluate(`(${PROBE})(${touch})`);
   const texts = await page.evaluate(STRETCH);
@@ -377,10 +400,85 @@ async function togglePass(page) {
   return out;
 }
 
+// --menus: open each menu button, measure what opened, close it. Never a menu item, never a link.
+const MENU_MARK = `(max, skipSrc) => {
+  const skip = skipSrc ? new RegExp(skipSrc, 'i') : null; let n = 0, skipped = 0;
+  for (const e of document.querySelectorAll('button[aria-haspopup]:not([aria-haspopup="false"]),[role=button][aria-haspopup]:not([aria-haspopup="false"]),button[aria-expanded="false"],summary')) {
+    if (n >= max) break;
+    if (e.tagName === 'INPUT' || e.disabled || e.type === 'submit' && e.form || e.getAttribute('aria-disabled') === 'true' || e.closest('a[href],[aria-hidden="true"],[inert],dialog:not([open])') || !(e.checkVisibility?.() ?? true)) continue;
+    const r = e.getBoundingClientRect();
+    if (!r.width || !r.height || r.top > innerHeight * 3) continue;
+    const text = (e.getAttribute('aria-label') || e.textContent || '').trim().replace(/\\s+/g, ' ').slice(0, 40);
+    if (skip && skip.test(text)) { skipped++; continue; }
+    e.setAttribute('data-uibh-m', n++); e.setAttribute('data-uibh-ml', text);
+  }
+  return { n, skipped };
+}`;
+const MENU_CAND = '[role=menu],[role=listbox],[role=dialog],dialog[open],[popover],[data-radix-popper-content-wrapper] > *';
+// Before the click: scroll the button to the middle, remember what is already open, return where to click (null = covered).
+const MENU_AIM = `(i) => { const e = document.querySelector('[data-uibh-m="' + i + '"]'); if (!e) return null;
+  e.scrollIntoView({ block: 'center', inline: 'nearest' });
+  window.__uibhPop = new Set([...document.querySelectorAll('${MENU_CAND}')].filter((x) => (x.checkVisibility?.() ?? true) && x.getBoundingClientRect().width > 0));
+  const r = e.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2, at = document.elementFromPoint(x, y);
+  return at && e.contains(at) ? { x, y } : null; }`;
+const MENU_FIND = `const e = document.querySelector('[data-uibh-m="' + i + '"]');
+  const seen = (x) => x && x.isConnected && (x.checkVisibility?.({ checkVisibilityCSS: true }) ?? true) && x.getBoundingClientRect().width > 1 && x.getBoundingClientRect().height > 1;
+  const id = e && e.getAttribute('aria-controls'), det = e && e.tagName === 'SUMMARY' ? e.parentElement : null;
+  const pop = !e ? null : det ? (det.open ? [...det.children].find((c) => c !== e && seen(c)) : null)
+    : (id && seen(document.getElementById(id)) ? document.getElementById(id) : [...document.querySelectorAll('${MENU_CAND}')].find((x) => !window.__uibhPop.has(x) && seen(x))) || null;`;
+const MENU_MEASURE = `(i) => { ${MENU_FIND}
+  if (!e) return null;
+  ${CUT_LIB}
+  const label = e.tagName.toLowerCase() + ' "' + e.getAttribute('data-uibh-ml') + '"';
+  if (!pop) return { label, pop: false };
+  const r = pop.getBoundingClientRect(), vw = document.documentElement.clientWidth, problems = [];
+  if (r.left < -2 || r.right > vw + 2 || r.top < -2) problems.push('opens off the screen (' + Math.round(r.left) + '..' + Math.round(r.right) + ' of ' + vw + (r.top < -2 ? ', top ' + Math.round(r.top) : '') + ')');
+  // an overlay (absolutely positioned) cut by a container; a panel in the normal flow just makes its container taller
+  let overlay = false; const [o, by] = cut(r, pop.parentElement, e.getBoundingClientRect());
+  for (let p = pop; p && p !== by; p = p.parentElement) { const ps = getComputedStyle(p).position; if (ps === 'fixed') { overlay = false; break; } if (ps === 'absolute') overlay = true; }
+  if (by && o >= 8 && overlay) problems.push('cut ' + Math.round(o) + 'px by ' + name(by));
+  if (!problems.length) for (const y of [r.top + Math.min(12, r.height / 2), r.top + r.height / 2, r.bottom - Math.min(12, r.height / 2)]) {
+    const x = r.left + r.width / 2; if (x < 0 || x > innerWidth || y < 0 || y > innerHeight) continue;
+    const at = document.elementFromPoint(x, y);
+    if (at && !pop.contains(at) && !at.contains(pop)) { problems.push('covered by ' + name(at)); break; }
+  }
+  return { label, pop: true, problems }; }`;
+const MENU_OPEN = `(i) => { ${MENU_FIND} return !!e && (e.getAttribute('aria-expanded') === 'true' || !!(det && det.open) || !!pop); }`;
+async function menuPass(page) {
+  const out = { opened: 0, skipped: 0, unclickable: 0, noPopup: 0, broken: [], notClosed: [] };
+  const url = page.url();
+  const mark = () => page.evaluate(`(${MENU_MARK})(${MENUS_MAX}, ${JSON.stringify(arg('--storage') ? `\\b(${ACTIONS})\\b` : '')})`);
+  const { n, skipped } = await mark();
+  out.skipped = skipped;
+  for (let i = 0; i < n; i++) {
+    try {
+      const pt = await page.evaluate(`(${MENU_AIM})(${i})`);
+      if (!pt) { out.unclickable++; continue; }
+      await page.mouse.click(pt.x, pt.y);
+      await page.waitForTimeout(450);   // the open animation: judging earlier reads a menu mid-flight as cut or invisible
+      if (page.url() !== url) { out.navigated = true; await page.goto(url, { waitUntil: 'domcontentloaded' }); await page.waitForTimeout(WAIT); break; }
+      const m = await page.evaluate(`(${MENU_MEASURE})(${i})`);
+      if (!m) continue;
+      if (m.pop) { out.opened++; for (const p of m.problems) out.broken.push(`${m.label}: its popup ${p}`); } else out.noPopup++;
+      await page.keyboard.press('Escape'); await page.waitForTimeout(200);
+      if (await page.evaluate(`(${MENU_OPEN})(${i})`)) { const again = await page.evaluate(`(${MENU_AIM})(${i})`); if (again) { await page.mouse.click(again.x, again.y); await page.waitForTimeout(250); } }
+      if (page.url() !== url) { out.navigated = true; await page.goto(url, { waitUntil: 'domcontentloaded' }); await page.waitForTimeout(WAIT); break; }
+      if (await page.evaluate(`(${MENU_OPEN})(${i})`)) {   // left open (a drawer that ignores Escape): every later measurement would be wrong, so start the page again
+        out.notClosed.push(m.label);
+        await page.reload({ waitUntil: 'domcontentloaded' }); await page.waitForTimeout(WAIT);
+        if (out.notClosed.length >= 3 || (await mark()).n !== n) break;
+      }
+    } catch { out.unclickable++; }
+  }
+  out.broken = [...new Set(out.broken)].slice(0, 12);
+  return out;
+}
+
 const bare = (u) => u.split(/[?#]/)[0].slice(0, 120);   // query strings can carry tokens: never written to the results
 async function visit(browser, job) {
   const [w, h, touch] = VIEWPORTS[job.vp];
   const ctx = await browser.newContext({ viewport: { width: w, height: h }, userAgent: touch ? PHONE_UA : DESKTOP_UA, isMobile: touch, hasTouch: touch,
+    ...(flag('--dark') ? { colorScheme: 'dark' } : {}),
     ...(READ_ONLY ? { serviceWorkers: 'block' } : {}),   // a service worker's own requests would not pass through the read-only filter
     ...(arg('--storage') ? { storageState: arg('--storage') } : {}), ...(job.locale ? { locale: job.locale } : {}) });
   if (job.locale && LOCALE_MODE.startsWith('cookie:')) await ctx.addCookies([{ name: LOCALE_MODE.slice(7), value: job.locale, url: BASE }]);
@@ -388,7 +486,7 @@ async function visit(browser, job) {
   const blocked = [];
   if (READ_ONLY) await ctx.route(READ_ONLY, (r) => (['POST', 'PUT', 'PATCH', 'DELETE'].includes(r.request().method()) ? (blocked.push(`${r.request().method()} ${bare(r.request().url())}`), r.abort()) : r.continue()));
   const page = await ctx.newPage();
-  const rec = { route: job.route, locale: job.locale, vp: job.vp, pageErrors: [], consoleErrors: [], failedRequests: [] };
+  const rec = { route: job.route, locale: job.locale, vp: job.vp, ...(flag('--dark') ? { dark: true } : {}), pageErrors: [], consoleErrors: [], failedRequests: [] };
   page.on('pageerror', (e) => rec.pageErrors.push(String(e.message || e).slice(0, 200)));
   page.on('console', (m) => { if (m.type() === 'error') rec.consoleErrors.push(m.text().slice(0, 200)); });
   page.on('response', (r) => { if (r.status() >= 400 && ['document', 'image', 'script', 'stylesheet', 'font', 'fetch', 'xhr'].includes(r.request().resourceType())) rec.failedRequests.push(`${r.status()} ${bare(r.url())}`); });
@@ -409,6 +507,7 @@ async function visit(browser, job) {
     rec.errorScreen = (rec.status >= 400) || await page.evaluate(([src, flags]) => new RegExp(src, flags).test(document.body.innerText.slice(0, 1500)), [ERROR_TEXT.source, ERROR_TEXT.flags]);
     rec.skeletons = await page.evaluate(() => document.querySelectorAll('.animate-pulse,[data-skeleton],.skeleton').length);
     rec.rawKeys = await page.evaluate(() => (document.body.innerText.match(/\b[a-z][a-zA-Z]+\.[a-z][a-zA-Z]+(\.[a-zA-Z_]+)+\b/g) || []).filter((s) => !/\.(com|net|org|info|io|dev|app|ai|co|[a-z]{2}|m?js|css|html?|png|jpe?g|gif|svg|webp|pdf)$/.test(s)).slice(0, 8));   // "orders.new.title" yes; "site.co.uk", "app.js" no
+    rec.placeholderText = await page.evaluate(([src, flags]) => [...new Set(document.body.innerText.match(new RegExp(src, flags + 'g')) || [])].slice(0, 3), [PLACEHOLDER_TEXT.source, PLACEHOLDER_TEXT.flags]);
     rec.visual = await page.evaluate(`(${PROBE})(${touch})`);
     if (!touch && flag('--hover') && !rec.errorScreen) rec.hover = await hoverPass(page);
     if (!touch && flag('--resize') && !rec.errorScreen) {
@@ -421,8 +520,9 @@ async function visit(browser, job) {
       await page.setViewportSize({ width: w, height: h }); await page.waitForTimeout(700);   // back: the vp's own shot is at its size
     }
     if (flag('--shots')) await page.screenshot({ path: path.join(OUT, 'shots', slug(job)) });
-    if (!touch && flag('--focus') && !rec.errorScreen && !rec.loginWall) rec.focus = await focusPass(page);
+    if (flag('--focus') && !rec.errorScreen && !rec.loginWall) rec.focus = await focusPass(page, touch);
     if (flag('--toggle') && !rec.errorScreen && !rec.loginWall) rec.toggle = await togglePass(page);   // after the shot: it clicks
+    if (flag('--menus') && !rec.errorScreen && !rec.loginWall && !rec.toggle?.navigated) rec.menus = await menuPass(page);
     if (flag('--stretch') && !rec.errorScreen && !rec.loginWall) rec.stretch = await stretchPass(page, touch);   // last: it rewrites the page's text
   } catch (e) { rec.fatal = String(e).slice(0, 200); }
   rec.blockedWrites = blocked;
@@ -511,6 +611,7 @@ if (!reuse) fs.writeFileSync(savedRoutes, ROUTES.routes.join('\n') + '\n');
 const outJson = path.join(OUT, `${TAG}.json`);
 // A page that failed to load (timeout) is not done: it is retried on the next run.
 const rows = (fs.existsSync(outJson) ? JSON.parse(fs.readFileSync(outJson, 'utf8')) : []).filter((r) => !r.fatal);
+if (rows.length && rows.some((r) => !!r.dark !== flag('--dark'))) { console.error(`${outJson} holds a ${flag('--dark') ? 'light' : 'dark'} scan: give this one its own --out`); process.exit(2); }
 const doneKeys = new Set(rows.map((r) => `${r.route}|${r.locale}|${r.vp}`));
 T0 = Date.now();   // the budget counts scanning time, not the crawl
 const jobs = [];
@@ -525,7 +626,7 @@ await Promise.all(Array.from({ length: Math.max(1, WORKERS) }, async () => {
     fs.writeFileSync(outJson, JSON.stringify(rows, null, 1));
     done++;
     const v = rec.visual || {};
-    console.log(`${String(done).padStart(4)}/${jobs.length} ${job.route} [${job.locale || '-'}/${job.vp}] ${rec.fatal ? 'FATAL ' + rec.fatal.slice(0, 60) : ''}${rec.errorScreen ? 'ERROR-SCREEN ' : ''}visual=${v.count ?? '-'}${rec.hover ? ` hover:none=${rec.hover.noFeedback.length} shift=${rec.hover.layoutShift.length}` : ''}${rec.focus ? ` focus:none=${rec.focus.noIndicator.length} cut=${rec.focus.cropped.length} hidden=${rec.focus.hidden.length}` : ''}${rec.toggle ? ` toggle:cut=${rec.toggle.cropped.length}/${rec.toggle.checked}` : ''}${rec.stretch ? ` stretch:broke=${rec.stretch.broke.length}` : ''}`);
+    console.log(`${String(done).padStart(4)}/${jobs.length} ${job.route} [${job.locale || '-'}/${job.vp}] ${rec.fatal ? 'FATAL ' + rec.fatal.slice(0, 60) : ''}${rec.errorScreen ? 'ERROR-SCREEN ' : ''}visual=${v.count ?? '-'}${rec.hover ? ` hover:none=${rec.hover.noFeedback.length} shift=${rec.hover.layoutShift.length}` : ''}${rec.focus ? ` focus:none=${rec.focus.noIndicator.length} cut=${rec.focus.cropped.length} hidden=${rec.focus.hidden.length} covered=${rec.focus.covered.length}` : ''}${rec.menus ? ` menus:broken=${rec.menus.broken.length}/${rec.menus.opened}` : ''}${rec.toggle ? ` toggle:cut=${rec.toggle.cropped.length}/${rec.toggle.checked}` : ''}${rec.stretch ? ` stretch:broke=${rec.stretch.broke.length}` : ''}`);
   }
 }));
 await browser.close();

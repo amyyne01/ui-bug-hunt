@@ -32,8 +32,8 @@ if (!rows.length) { console.error('no scan rows found in ' + files.join(', ')); 
 
 // Numbers that change per page (positions, sizes) must not split one element into many findings.
 const norm = (s) => s.replace(/\(-?\d+\.\.-?\d+\)|\d+×\d+|w=\d+|\d+\/\d+[wh]|×\d+|-?\d+\.\.-?\d+ of \d+/g, '#').replace(/\d+/g, '#');   // also digits in labels: one price element, not one group per price
-const KINDS = ['overflow', 'coveredAtEnd', 'unitSplit', 'overlapControls', 'offscreen', 'fixedOverlap', 'bigDialog', 'clipped', 'brokenImg', 'lowContrast', 'squeezed', 'small', 'misaligned', 'sizeMismatch', 'iconSize', 'styleMismatch', 'colourDrift'];
-const ORDER = ['overflow', 'coveredAtEnd', 'unitSplit', 'overlapControls', 'offscreen', 'fixedOverlap', 'bigDialog', 'clipped', 'brokenImg', 'toggleCrop', 'focusHidden', 'focusCrop', 'lowContrast', 'focusNone', 'hoverShift', 'squeezed', 'misaligned', 'sizeMismatch', 'iconSize', 'styleMismatch', 'colourDrift', 'small', 'hoverNone', 'stretch'];
+const KINDS = ['overflow', 'coveredAtEnd', 'unitSplit', 'overlapControls', 'offscreen', 'fixedOverlap', 'bigDialog', 'clipped', 'brokenImg', 'lowContrast', 'squeezed', 'small', 'misaligned', 'sizeMismatch', 'iconSize', 'styleMismatch', 'colourDrift', 'wordBroken', 'sepStart', 'textSpill', 'scrollNoCue', 'rtlAlign', 'kbdHint', 'placeholderCut'];
+const ORDER = ['overflow', 'coveredAtEnd', 'unitSplit', 'overlapControls', 'offscreen', 'fixedOverlap', 'bigDialog', 'clipped', 'wordBroken', 'textSpill', 'brokenImg', 'menu', 'focusCovered', 'toggleCrop', 'focusHidden', 'focusCrop', 'lowContrast', 'focusNone', 'hoverShift', 'squeezed', 'sepStart', 'placeholderCut', 'scrollNoCue', 'rtlAlign', 'misaligned', 'sizeMismatch', 'iconSize', 'styleMismatch', 'colourDrift', 'small', 'kbdHint', 'hoverNone', 'stretch'];
 const WHAT = {
   overflow: 'page scrolls sideways (element wider than the screen)',
   coveredAtEnd: 'scrolled to the end, a control is still under a fixed bottom bar',
@@ -59,6 +59,15 @@ const WHAT = {
   iconSize: 'one icon of a set drawn at another size',
   styleMismatch: 'same component, one drawn with another colour or font',
   colourDrift: 'two text colours that are almost, but not, the same',
+  wordBroken: 'a short word broken across lines (one letter or half a word per line)',
+  sepStart: 'a separator (· : » |) starts a line instead of staying with what precedes it',
+  textSpill: 'a label wider than its box, drawn over its neighbour',
+  scrollNoCue: 'a tab or chip strip scrolls sideways with nothing to show it, or its active item is out of view',
+  rtlAlign: 'right-to-left text pinned to the left (a physical text-align: left)',
+  kbdHint: 'a keyboard hint (Esc, Ctrl K) shown on a touch screen',
+  placeholderCut: 'a placeholder longer than its field (cut mid-word)',
+  menu: 'a menu or popup that opens off the screen, cut by a container, or under another layer',
+  focusCovered: 'a focused field or button left under a fixed bar',
 };
 function collect(rows) {
 const groups = new Map();
@@ -70,12 +79,17 @@ const add = (kind, item, route, where) => {
   g.routes.add(route); g.where.add(where); g.sample = item; groups.set(key, g);
 };
 for (const r of rows) {
-  const where = `${r.locale || '-'}/${r.vp}`;
+  const where = `${r.locale || '-'}/${r.vp}${r.dark ? '/dark' : ''}`;
   if (r.fatal) { page('load failed', `${r.route} ${where}: ${r.fatal.slice(0, 90)}`); continue; }
   if (r.loginWall) { page('sent to a sign-in page (session expired or missing --storage): not measured', `${r.route} ${where} -> ${r.redirectedTo || ''}`); continue; }
   if (r.redirectedTo) page('redirected (findings below are for the page it landed on)', `${r.route} ${where} -> ${r.redirectedTo}`);
   if (r.errorScreen) { page('error screen (trace it: a real crash, or test data the scan could not provide?)', `${r.route} ${where}`); continue; }
   if (r.pageErrors?.length) page('uncaught JS errors', `${r.route} ${where}: ${r.pageErrors[0].slice(0, 90)}`);
+  const cons = (r.consoleErrors || []).filter((e) => !/Failed to load resource/.test(e));   // those are the failed requests below
+  const dup = cons.find((e) => /same key/i.test(e));
+  if (dup) page('duplicate list keys (rows can be doubled or dropped)', `${r.route} ${where}: ${dup.slice(0, 110)}`);
+  else if (cons.length) page('console errors', `${r.route} ${where}: ${cons[0].slice(0, 110)}`);
+  if (r.placeholderText?.length) page('placeholder text on a shipped page', `${r.route} ${where}: ${r.placeholderText.join(', ')}`);
   if (r.skeletons) page('loading skeleton still on screen', `${r.route} ${where}`);
   const keys = r.rawKeys;
   if (keys?.length) page('untranslated keys on screen', `${r.route} ${where}: ${keys.slice(0, 3).join(', ')}`);
@@ -85,9 +99,12 @@ for (const r of rows) {
   for (const [kind, key] of [['hoverShift', 'layoutShift'], ['hoverNone', 'noFeedback']]) for (const item of r.hover?.[key] || []) add(kind, item, r.route, where);
   for (const item of r.toggle?.cropped || []) add('toggleCrop', item, r.route, where);
   for (const item of r.stretch?.broke || []) add('stretch', item.replace(/"[^"]*"/, ''), r.route, where);   // the lengthened label is not the real one
-  for (const [kind, key] of [['focusHidden', 'hidden'], ['focusCrop', 'cropped'], ['focusNone', 'noIndicator']]) for (const item of r.focus?.[key] || []) add(kind, item, r.route, where);
+  for (const [kind, key] of [['focusHidden', 'hidden'], ['focusCrop', 'cropped'], ['focusNone', 'noIndicator'], ['focusCovered', 'covered']]) for (const item of r.focus?.[key] || []) add(kind, item, r.route, where);
   for (const item of r.toggle?.notRestored || []) page('checkbox left changed by the click test (it did not switch back)', `${r.route} ${where}: ${item}`);
   if (r.toggle?.skipped || r.toggle?.unclickable) page('checkboxes NOT tested by the click test (do not read them as clean)', `${r.route} ${where}: ${r.toggle.checked} clicked, ${r.toggle.skipped} skipped for an action-looking label (signed in), ${r.toggle.unclickable} covered or not clickable`);
+  for (const item of r.menus?.broken || []) add('menu', item, r.route, where);
+  for (const item of r.menus?.notClosed || []) page('a menu or drawer that Escape does not close', `${r.route} ${where}: ${item}`);
+  if (r.menus?.skipped) page('menus NOT opened by the menu test (do not read them as clean)', `${r.route} ${where}: ${r.menus.opened} opened, ${r.menus.skipped} skipped for an action-looking label (signed in), ${r.menus.unclickable} covered or not clickable`);
   if (r.toggle?.navigated) page('a checkbox click opened another page (click test stopped there)', `${r.route} ${where}`);
 }
 return { groups, pages };

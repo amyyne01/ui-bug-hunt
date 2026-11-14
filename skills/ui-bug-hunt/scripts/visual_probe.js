@@ -128,17 +128,18 @@
   for (const el of document.querySelectorAll('h1,h2,h3,h4,p,span,a,button,label,td,th,li,small,strong')) {
     if (out.lowContrast.length >= 12) break;
     const t = [...el.childNodes].filter((n) => n.nodeType === 3).map((n) => n.textContent).join('').trim();
-    if (t.length < 2 || !visible(el) || el.closest('[disabled],[aria-disabled="true"]')) continue;
+    if (t.length < 2 || !visible(el)) continue;
+    const off = !!el.closest('[disabled],[aria-disabled="true"]');   // disabled may be fainter, but must still be readable
     const r = el.getBoundingClientRect();
     if (!inView(r) || r.top > vh * 2) continue;
     const cs = getComputedStyle(el), fg = rgb(cs.color), bg = bgOf(el);
     if (!fg || !bg || fg.a < 0.5) continue;
     const l1 = lum(fg), l2 = lum(bg), ratio = (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
     const big = parseFloat(cs.fontSize) >= 24 || (parseFloat(cs.fontSize) >= 18.6 && +cs.fontWeight >= 700);
-    if (ratio < (big ? 3 : 3.5)) {   // below AA-large for big text, a little below AA (4.5) for body: real misses only
+    if (ratio < (off ? 2.5 : big ? 3 : 3.5)) {   // below AA-large for big text, a little below AA (4.5) for body: real misses only
       const k = `${cs.color}|${bg.r},${bg.g},${bg.b}`;
       if (done.has(k)) continue; done.add(k);
-      out.lowContrast.push(`${ratio.toFixed(2)} ${sel(el)} ${cs.color} on rgb(${bg.r},${bg.g},${bg.b})`);
+      out.lowContrast.push(`${ratio.toFixed(2)} ${sel(el)} ${off ? 'disabled ' : ''}${cs.color} on rgb(${bg.r},${bg.g},${bg.b})`);
     }
   }
   // 7b. a number split from its unit/currency across two lines ("1,250" / "USD", "10:30" / "PM", "12" / "mo"):
@@ -158,6 +159,14 @@
         const tops = new Set([...range.getClientRects()].filter((r) => r.width > 0).map((r) => Math.round(r.top)));
         const box = range.getBoundingClientRect();
         if (tops.size > 1 && box.bottom > 0 && box.top < vh * 2) { out.unitSplit.push(`${sel(n.parentElement)} "${m[0].trim()}" on ${tops.size} lines`); break; }
+      }
+      // the unit first ("USD" / "69,00", "$" / "12"): currency codes and symbols only, "Step 2" may wrap
+      const u = t.match(/(?:^|[^A-Za-z])((?:[A-Z]{2,4}|[$€£¥₺])[   ]?\d[\d.,]*)/);
+      if (u && out.unitSplit.length < 10) {
+        const range = document.createRange(), at = t.indexOf(u[1]);
+        range.setStart(n, at); range.setEnd(n, at + u[1].length);
+        const tops = new Set([...range.getClientRects()].filter((r) => r.width > 0).map((r) => Math.round(r.top)));
+        if (tops.size > 1 && !out.unitSplit.some((s) => s.startsWith(sel(n.parentElement)))) out.unitSplit.push(`${sel(n.parentElement)} "${u[1]}" on ${tops.size} lines`);
       }
     }
   }
@@ -271,7 +280,7 @@
     for (const prop of ['color', 'backgroundColor', 'fontSize', 'fontWeight', 'fontFamily']) {
       const vals = peers.map((it) => getComputedStyle(it.el)[prop]);
       const [m, n] = modeOf(vals);
-      const odd = peers.filter((it, i) => vals[i] !== m);
+      const odd = peers.filter((_, i) => vals[i] !== m);
       if (!odd.length || odd.length > Math.max(1, peers.length / 4)) continue;
       for (const it of odd.slice(0, 2)) out.styleMismatch.push(`${sel(it.el)} has ${prop} ${getComputedStyle(it.el)[prop].slice(0, 40)} where its ${n} neighbours have ${m.slice(0, 40)}`);
       break;
@@ -292,7 +301,111 @@
     if (out.colourDrift.length < 6 && a.n >= b.n * 3 && Math.max(...d) >= 1 && Math.max(...d) <= 4 && d[0] + d[1] + d[2] <= 8)
       out.colourDrift.push(`rgb(${b.k}) on ${b.n} text(s), e.g. ${sel(b.el)}, is almost rgb(${a.k}) used on ${a.n}`);
   }
-  out.count = ['overflow', 'coveredAtEnd', 'unitSplit', 'clipped', 'squeezed', 'brokenImg', 'overlapControls', 'offscreen', 'fixedOverlap', 'lowContrast', 'bigDialog', 'misaligned', 'iconSize', 'sizeMismatch', 'styleMismatch', 'colourDrift']
+  // 10. text that wraps wrongly, measured on the text's own line boxes
+  out.wordBroken = []; out.sepStart = []; out.textSpill = []; out.scrollNoCue = []; out.rtlAlign = []; out.kbdHint = []; out.placeholderCut = [];
+  {
+    const SEP = '·•»|:';   // not dashes: in a sentence they may start a line
+    const top1 = (n, a, b) => { const g = document.createRange(); g.setStart(n, a); g.setEnd(n, b); return [...g.getClientRects()].filter((r) => r.width > 0); };
+    const block = (el) => { for (let p = el; p; p = p.parentElement) if (!getComputedStyle(p).display.startsWith('inline')) return p; return null; };
+    const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    let prev = null;   // last drawn character before this node: { rect, block }
+    let k = 0;
+    for (let n = w.nextNode(); n && k < 3000; n = w.nextNode()) {
+      const t = n.textContent, p = n.parentElement;
+      if (!t.trim() || !p || p.closest('script,style,noscript,svg,textarea,pre,code,[aria-hidden="true"]') || !visible(p)) continue;
+      k++;
+      const cs = getComputedStyle(p), all = top1(n, 0, t.length);
+      if (!all.length || all[0].top > vh * 3 || all[all.length - 1].bottom < 0) { prev = null; continue; }
+      const blk = block(p), first = t.search(/\S/);
+      if (!blk || blk.clientWidth <= 2 || p.getBoundingClientRect().width <= 2) continue;   // screen-reader-only text in a 1px box
+      // 10b. a separator that starts a line (" · 9.860", " : value", " » text"): it belongs with what precedes it
+      for (let i = first; i >= 0 && i < t.length && out.sepStart.length < 8 && t.trim().length <= 60; i++) {   // labels, not running text
+        if (!SEP.includes(t[i]) || (i > first && !/\s/.test(t[i - 1])) || !/\s/.test(t[i + 1] || ' ') || t.trim().length < 2 && !prev) continue;
+        let j = i - 1; while (j >= 0 && /\s/.test(t[j])) j--;
+        const before = j >= 0 ? top1(n, j, j + 1)[0] : (prev && prev.block === blk ? prev.rect : null), at = top1(n, i, i + 1)[0];
+        if (before && at && at.top >= before.bottom - 3) { out.sepStart.push(`${sel(blk || p)} "${t[i]}" starts a line`); break; }
+      }
+      const last = t.search(/\S\s*$/);
+      const lr = top1(n, last, last + 1)[0];
+      prev = lr ? { rect: lr, block: blk } : prev;
+      // 10a. a short word broken across lines ("Paramètr" / "es", "D" / "T"); long strings and hyphenation may break
+      if (out.wordBroken.length >= 8 || cs.hyphens === 'auto' || cs.writingMode !== 'horizontal-tb' || new Set(all.map((r) => Math.round(r.top / 4))).size < 2) continue;
+      for (const m of t.matchAll(/[A-Za-zÀ-ɏͰ-ϿЀ-ӿ֐-׿؀-ۿ0-9]{2,20}/g)) {
+        if (/[A-Za-zÀ-ɏͰ-ϿЀ-ӿ֐-׿؀-ۿ0-9]/.test((t[m.index - 1] || ' ') + (t[m.index + m[0].length] || ' '))) continue;   // part of a longer string
+        const rs = top1(n, m.index, m.index + m[0].length);
+        if (rs.length > 1 && rs[rs.length - 1].top >= rs[0].bottom - 3) { out.wordBroken.push(`${sel(p)} "${m[0]}" broken over ${rs.length} lines`); break; }
+      }
+    }
+  }
+  // 10c. a label wider than its own box, drawn over its neighbour (nowrap + a box that shrank under its text)
+  for (const el of document.querySelectorAll('a,button,[role=tab],label,li,span,div')) {
+    if (out.textSpill.length >= 8) break;
+    if (el.children.length > 1 || el.scrollWidth <= el.clientWidth + 2 || !el.clientWidth || !visible(el)) continue;
+    const cs = getComputedStyle(el);
+    if (cs.overflowX !== 'visible' || cs.whiteSpace !== 'nowrap' && cs.textWrapMode !== 'nowrap') continue;
+    const range = document.createRange(); range.selectNodeContents(el);
+    const tr = range.getBoundingClientRect(), r = el.getBoundingClientRect();
+    if (!inView(r) || !tr.width) continue;
+    for (const s of [el.nextElementSibling, el.previousElementSibling]) {
+      if (!s || !visible(s) || !(s.textContent || '').trim()) continue;
+      const sr = s.getBoundingClientRect();
+      const o = Math.min(tr.right, sr.right) - Math.max(tr.left, sr.left);
+      if (o > 3 && Math.min(tr.bottom, sr.bottom) - Math.max(tr.top, sr.top) > 3 && (tr.right > r.right + 2 || tr.left < r.left - 2)) { out.textSpill.push(`${sel(el)} spills ${Math.round(o)}px over ${sel(s)}`); break; }
+    }
+  }
+  // 10d. a tab / chip strip that scrolls sideways with nothing to say so (no fade, no item cut at the edge), or
+  //      whose active item is scrolled out of view
+  for (const el of document.querySelectorAll('nav,ul,ol,div,[role=tablist]')) {
+    if (out.scrollNoCue.length >= 6) break;
+    if (el.scrollWidth <= el.clientWidth + 16 || el.clientHeight > 80 || el.clientHeight < 16 || !visible(el)) continue;
+    const cs = getComputedStyle(el);
+    if (!['auto', 'scroll'].includes(cs.overflowX)) continue;
+    const r = el.getBoundingClientRect();
+    if (!inView(r)) continue;
+    const items = [...el.querySelectorAll('a,button,[role=tab]')].filter(visible).map((c) => ({ c, r: c.getBoundingClientRect() }));
+    if (items.length < 3) continue;
+    const gone = items.filter((it) => it.r.right <= r.left + 1 || it.r.left >= r.right - 1);
+    const active = gone.find((it) => it.c.matches('[aria-selected="true"],[aria-current]:not([aria-current="false"]),[data-state="active"]'));
+    if (active) out.scrollNoCue.push(`${sel(el)}: the active item ${sel(active.c)} is scrolled out of view`);
+    const cut = items.some((it) => (it.r.left < r.right - 12 && it.r.right > r.right + 12) || (it.r.right > r.left + 12 && it.r.left < r.left - 12));
+    const bar = cs.scrollbarWidth !== 'none' && el.offsetHeight - el.clientHeight - parseFloat(cs.borderTopWidth) - parseFloat(cs.borderBottomWidth) > 2;
+    const fade = [el, el.parentElement, el.parentElement?.parentElement].some((x) => x && (getComputedStyle(x).maskImage !== 'none'
+      || ['::before', '::after'].some((q) => { const c = getComputedStyle(x, q); return c.content !== 'none' && c.backgroundImage.includes('gradient'); })));
+    if (gone.length && !cut && !bar && !fade) out.scrollNoCue.push(`${sel(el)}: ${gone.length} of ${items.length} items are past the edge and nothing shows it`);
+  }
+  // 10e. right-to-left text pinned to the left by a physical "text-align: left" (a logical "start" computes to start)
+  {
+    const seenAlign = new Set();
+    for (const el of document.querySelectorAll('h1,h2,h3,h4,p,span,a,button,label,td,th,li,dt,dd,div')) {
+      if (out.rtlAlign.length >= 8) break;
+      if (![...el.childNodes].some((n) => n.nodeType === 3 && /[֐-׿؀-ۿ]/.test(n.textContent))) continue;
+      const cs = getComputedStyle(el);
+      if (cs.direction !== 'rtl' || cs.textAlign !== 'left' || cs.display.startsWith('inline') || !visible(el) || !inView(el.getBoundingClientRect())) continue;
+      const key = sel(el).replace(/ ".*/, '');
+      if (!seenAlign.has(key)) { seenAlign.add(key); out.rtlAlign.push(`${sel(el)} is right-to-left text aligned left`); }
+    }
+  }
+  // 10f. keyboard hints on a touch screen ("Esc", "Ctrl K")
+  if (touch) for (const el of document.querySelectorAll('kbd')) { if (visible(el) && inView(el.getBoundingClientRect()) && out.kbdHint.length < 5) out.kbdHint.push(sel(el)); }
+  // 10g. a placeholder longer than its field (cut mid-word), and a placeholder too faint to read
+  {
+    const ctx = document.createElement('canvas').getContext('2d');
+    for (const el of document.querySelectorAll('input[placeholder]:not([type=hidden])')) {
+      if (el.value || !visible(el) || !inView(el.getBoundingClientRect())) continue;
+      const cs = getComputedStyle(el), ph = getComputedStyle(el, '::placeholder');
+      ctx.font = `${cs.fontStyle} ${cs.fontWeight} ${ph.fontSize || cs.fontSize} ${cs.fontFamily}`;
+      const need = ctx.measureText(el.placeholder).width, room = el.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+      if (room > 0 && need > room + 2 && ph.textOverflow !== 'ellipsis' && cs.textOverflow !== 'ellipsis' && out.placeholderCut.length < 8) out.placeholderCut.push(`${sel(el)} placeholder needs ${Math.round(need)}px, the field has ${Math.round(room)}`);
+      const fg = rgb(ph.color), bg = bgOf(el);
+      if (!fg || !bg || out.lowContrast.length >= 14) continue;
+      const mix = (c, b) => Math.round(c * fg.a + b * (1 - fg.a)), f = { r: mix(fg.r, bg.r), g: mix(fg.g, bg.g), b: mix(fg.b, bg.b) };   // a see-through placeholder colour over the field
+      const l1 = lum(f), l2 = lum(bg), ratio = (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+      const pk = `ph|${ph.color}|${bg.r},${bg.g},${bg.b}`;
+      if (ratio < 3 && !done.has(pk)) { done.add(pk); out.lowContrast.push(`${ratio.toFixed(2)} ${sel(el)} placeholder ${ph.color} on rgb(${bg.r},${bg.g},${bg.b})`); }
+    }
+  }
+  out.count = ['overflow', 'coveredAtEnd', 'unitSplit', 'clipped', 'squeezed', 'brokenImg', 'overlapControls', 'offscreen', 'fixedOverlap', 'lowContrast', 'bigDialog', 'misaligned', 'iconSize', 'sizeMismatch', 'styleMismatch', 'colourDrift',
+    'wordBroken', 'sepStart', 'textSpill', 'scrollNoCue', 'rtlAlign', 'kbdHint', 'placeholderCut']
     .reduce((n, k) => n + out[k].length, 0) + (touch ? out.small.length : 0);
   return out;
 }
